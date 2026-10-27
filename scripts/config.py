@@ -20,12 +20,12 @@ def load_env_file():
 
 load_env_file()
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://103.93.223.103:9075")
-TERMINAL_ID = "HaH-B5-02-00055"
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJBRE1JTiIsInR5cGUiOiJBRE1JTiIsInRlcm1pbmFsSUQiOm51bGwsImp0aSI6ImNhMGM4ODNlLWZmOGEtNDYwMC05OTI2LTVjYWI4NDk2OWNkNSIsImlhdCI6MTc4MzAzODYxNSwiZXhwIjoxNzgzNjQzNDE1fQ.NW8QOMZJTgdBVlYU7HruUMh2_UG8iKvvero438PJrVE"
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://192.168.0.13:9080")
+TERMINAL_ID = "PoR-B1-02-00001"
+TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJybmRzdXBlcmFkbWluIiwidHlwZSI6IkFETUlOIiwidGVybWluYWxJRCI6bnVsbCwianRpIjoiMWQxNmU0ZmQtNGU3NS00M2Q0LWEwNTYtMGQ3ZDZjM2Y2MWExIiwiaWF0IjoxNzkzMDY1MzY5LCJleHAiOjE3OTM2NzAxNjl9.81uCRZHRbT40jOrSpOpwGN1LaFk6mQNxzTDSWEw83WE"
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "Accept": "application/json"}
 
-ADMIN_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJBRE1JTiIsInR5cGUiOiJBRE1JTiIsInRlcm1pbmFsSUQiOm51bGwsImp0aSI6ImNhMGM4ODNlLWZmOGEtNDYwMC05OTI2LTVjYWI4NDk2OWNkNSIsImlhdCI6MTc4MzAzODYxNSwiZXhwIjoxNzgzNjQzNDE1fQ.NW8QOMZJTgdBVlYU7HruUMh2_UG8iKvvero438PJrVE"
+ADMIN_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJybmRzdXBlcmFkbWluIiwidHlwZSI6IkFETUlOIiwidGVybWluYWxJRCI6bnVsbCwianRpIjoiMWQxNmU0ZmQtNGU3NS00M2Q0LWEwNTYtMGQ3ZDZjM2Y2MWExIiwiaWF0IjoxNzkzMDY1MzY5LCJleHAiOjE3OTM2NzAxNjl9.81uCRZHRbT40jOrSpOpwGN1LaFk6mQNxzTDSWEw83WE"
 ADMIN_HEADERS = {"Authorization": f"Bearer {ADMIN_TOKEN}", "Content-Type": "application/json", "Accept": "application/json"}
 
 # ---------------------------------------------------------------------------
