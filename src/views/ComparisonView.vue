@@ -3,7 +3,7 @@
     <div class="admin-header-row">
       <h1 style="color: #17a2b8; display: flex; align-items: center; gap: 10px;">
         <span class="mdi mdi-table-eye"></span>
-        Dispositionn Module (Conference Room)
+        Disposition Module (Conference Room)
       </h1>
       <div class="launcher-actions">
         <router-link to="/" class="btn btn-launcher btn-admin-launcher">

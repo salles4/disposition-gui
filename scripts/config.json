@@ -10,16 +10,6 @@
     "teller_process_delay_seconds": 5,
     "teller_cooldown_seconds": 6,
     "camera_mapping": {
-        "192.168.0.151": {
-            "gate": 1,
-            "direction": "entry",
-            "camera": "back"
-        },
-        "192.168.0.158": {
-            "gate": 1,
-            "direction": "entry",
-            "camera": "front"
-        },
         "192.168.0.152": {
             "gate": 1,
             "direction": "exit",
