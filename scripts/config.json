@@ -1,0 +1,55 @@
+{
+    "entry_interval_seconds": 5,
+    "pay_delay_seconds": 2,
+    "exit_delay_seconds": 6,
+    "mock_mode": false,
+    "detection_mode": "camera",
+    "auto_generate_plates": false,
+    "camera_auto_exit_only": false,
+    "real_device_payment": false,
+    "teller_process_delay_seconds": 5,
+    "teller_cooldown_seconds": 6,
+    "camera_mapping": {
+        "192.168.0.151": {
+            "gate": 1,
+            "direction": "entry",
+            "camera": "back"
+        },
+        "192.168.0.158": {
+            "gate": 1,
+            "direction": "entry",
+            "camera": "front"
+        },
+        "192.168.0.152": {
+            "gate": 1,
+            "direction": "exit",
+            "camera": "back"
+        },
+        "192.168.0.161": {
+            "gate": 1,
+            "direction": "exit",
+            "camera": "front"
+        },
+        "192.168.0.154": {
+            "gate": 2,
+            "direction": "exit",
+            "camera": "back"
+        },
+        "192.168.0.162": {
+            "gate": 2,
+            "direction": "exit",
+            "camera": "front"
+        },
+        "192.168.0.160": {
+            "gate": 2,
+            "direction": "entry",
+            "camera": "front"
+        },
+        "192.168.0.153": {
+            "gate": 2,
+            "direction": "entry",
+            "camera": "back"
+        }
+    },
+    "enable_automatic_payment": false
+}
