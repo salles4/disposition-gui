@@ -15,7 +15,7 @@ from scripts.config import GLOBAL_CONFIG, load_config, save_config
 from scripts.state import (
     queue_lock, connected_terminals, sim_stats, logs_history,
     pending_reconciliations, reconciliation_lock, daily_reconciliation_history, process_and_buffer_data,
-    all_time_stats
+    all_time_stats, unregistered_cameras
 )
 from scripts.logging_reporter import log_event
 from scripts.payment_handler import sync_and_process_parked_vehicles
@@ -24,6 +24,10 @@ from scripts.utils import format_plate
 from scripts.api_metrics import set_broadcast_callback, get_all_metrics, reset_metrics
 
 set_broadcast_callback(lambda data: socketio.emit('api_metrics_update', data, to='admin_room'))
+
+def emit_unregistered_cameras(to='admin_room'):
+    cams = sorted(unregistered_cameras.values(), key=lambda c: c["last_seen"], reverse=True)
+    socketio.emit('unregistered_cameras', cams, to=to)
 
 # =========================================================
 # 🌐 SOCKET ROUTING & ADMIN COMMANDS
@@ -61,7 +65,8 @@ def handle_registration(data):
         manual_history = load_manual_verification_history()
         socketio.emit('manual_verification_history', manual_history, to=request.sid)
         socketio.emit('api_metrics_update', get_all_metrics(), to=request.sid)
-        
+        emit_unregistered_cameras(to=request.sid)
+
     log_event(f"Terminal Connected: {role.upper()} GATE {gate} (IP: {ip}).", "SYSTEM")
 
 @socketio.on('get_detection_images')
@@ -275,10 +280,19 @@ def handle_update_config(data):
     GLOBAL_CONFIG['teller_cooldown_seconds'] = int(data.get('teller_cooldown', 3))
     if 'camera_mapping' in data:
         GLOBAL_CONFIG['camera_mapping'] = data['camera_mapping']
-    
+        for ip in list(unregistered_cameras):
+            if ip in GLOBAL_CONFIG['camera_mapping']:
+                unregistered_cameras.pop(ip, None)
+
     save_config(log_event)
     socketio.emit('config_sync', GLOBAL_CONFIG, to='admin_room')
+    emit_unregistered_cameras()
     log_event(f"Config Updated.", "ADMIN")
+
+@socketio.on('dismiss_unregistered_camera')
+def handle_dismiss_unregistered_camera(data):
+    unregistered_cameras.pop(data.get('ip'), None)
+    emit_unregistered_cameras()
 
 @socketio.on('admin_sync_parked_vehicles')
 def handle_sync_parked_vehicles():
@@ -387,6 +401,8 @@ def analyze_camera_payload(payload_package):
         v_type = get_xml_tag('vehicleType')
         confidence = get_xml_tag('confidenceLevel')
         ip_address = get_xml_tag('ipAddress')
+        mac_address = get_xml_tag('macAddress')
+        channel_name = get_xml_tag('channelName')
 
         # Extract both image contexts
         base64_plate_img = ""
@@ -427,10 +443,21 @@ def analyze_camera_payload(payload_package):
                 camera_data["direction"] = direction
                 
                 source_type = "FRONT_CAM" if camera_role == "front" else "BACK_CAM"
-                print(f"[CAMERA BUFFERED] Routing to {source_type} (Gate: {gate_id}, Direction: {direction})", flush=True)
+                cam_label = cam_info.get("name") or ip_address
+                print(f"[CAMERA BUFFERED] {cam_label} -> {source_type} (Gate: {gate_id}, Direction: {direction})", flush=True)
                 process_and_buffer_data(source_type, camera_data)
             else:
-                log_event(f"Unregistered LPR camera IP: {ip_address} sent detection data. Please register this camera on the dashboard.", "SYSTEM")
+                if ip_address not in unregistered_cameras:
+                    log_event(f"Unregistered LPR camera IP: {ip_address} sent detection data. Register it on the dashboard.", "SYSTEM")
+                cam = unregistered_cameras.setdefault(ip_address, {"ip": ip_address, "hits": 0})
+                cam.update({
+                    "mac": mac_address,
+                    "channel_name": channel_name,
+                    "last_plate": camera_data["plate"],
+                    "last_seen": camera_data["timestamp"],
+                    "hits": cam["hits"] + 1
+                })
+                emit_unregistered_cameras()
 
     except Exception as e:
         print(f"[PARSER EXCEPTION] Failed parsing camera multipart: {str(e)}", flush=True)

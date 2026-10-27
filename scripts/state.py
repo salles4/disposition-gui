@@ -19,6 +19,10 @@ scheduled_exits = []
 
 connected_terminals = {}
 
+# LPR cameras that posted detections but are not in camera_mapping yet
+# {ip: {"ip", "mac", "channel_name", "last_plate", "last_seen", "hits"}}
+unregistered_cameras = {}
+
 sim_stats = {
     "queued": 0,  
     "parked": 0,  

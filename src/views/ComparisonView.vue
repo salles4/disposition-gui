@@ -106,6 +106,35 @@
           </div>
 
           <div class="filter-group">
+            <span class="filter-label"><span class="mdi mdi-swap-vertical"></span> Direction:</span>
+            <select v-model="selectedDirection" class="select-premium">
+              <option value="ALL">Entry &amp; Exit</option>
+              <option value="entry">Entry Only</option>
+              <option value="exit">Exit Only</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-label"><span class="mdi mdi-boom-gate-outline"></span> Gate:</span>
+            <select v-model="selectedGate" class="select-premium">
+              <option value="ALL">All Gates</option>
+              <option v-for="g in availableGates" :key="g" :value="g">{{ g }}</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-label"><span class="mdi mdi-eye-off-outline"></span> Missing:</span>
+            <select v-model="selectedMissing" class="select-premium">
+              <option value="ALL">Any</option>
+              <option value="FRONT">No Front Camera</option>
+              <option value="BACK">No Back Camera</option>
+              <option value="HCP">No HikCentral</option>
+              <option value="ADMIN">No Admin Read</option>
+              <option value="COMPLETE">All Sources Present</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
             <span class="filter-label"><span class="mdi mdi-car"></span> Type:</span>
             <select v-model="selectedVehicleType" class="select-premium">
               <option value="ALL">All Types</option>
@@ -503,6 +532,9 @@ const selectedConfidence = ref('ALL')
 const selectedRouting = ref('ALL')
 const sortOrderTime = ref('DESC')
 const excludeUnknown = ref(true)
+const selectedDirection = ref('ALL')
+const selectedGate = ref('ALL')
+const selectedMissing = ref('ALL')
 const availableDates = ref([])
 
 const fetchHistory = () => {
@@ -818,6 +850,14 @@ const updateTicketingDecision = (row, decision) => {
   })
 }
 
+const getRowDirection = (row) => (row.direction || 'entry').toLowerCase()
+const getRowGate = (row) => (row.gate || 'GATE 1').toUpperCase()
+
+const availableGates = computed(() => {
+  const gates = new Set(comparisonList.value.map(getRowGate))
+  return [...gates].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+})
+
 const kpiFilteredList = computed(() => {
   let list = comparisonList.value
 
@@ -837,6 +877,28 @@ const kpiFilteredList = computed(() => {
       const isCUnknown = cPlate.includes('UNKNOWN')
       
       return !(isPkUnknown || isFUnknown || isBUnknown || isHUnknown || isCUnknown)
+    })
+  }
+
+  // 0b. Filter by Direction / Gate (rows without a value are shown as GATE 1 / entry)
+  if (selectedDirection.value !== 'ALL') {
+    list = list.filter(row => getRowDirection(row) === selectedDirection.value)
+  }
+  if (selectedGate.value !== 'ALL') {
+    list = list.filter(row => getRowGate(row) === selectedGate.value)
+  }
+
+  // 0c. Filter by missing source
+  if (selectedMissing.value !== 'ALL') {
+    list = list.filter(row => {
+      switch (selectedMissing.value) {
+        case 'FRONT': return !row.front_camera
+        case 'BACK': return !row.back_camera
+        case 'HCP': return !row.hikcentral
+        case 'ADMIN': return !row.core_event
+        case 'COMPLETE': return row.front_camera && row.back_camera && row.hikcentral && row.core_event
+        default: return true
+      }
     })
   }
 
@@ -1112,7 +1174,7 @@ const getValidationInfo = (row) => {
 
 const getRowClass = (row) => {
   const info = getValidationInfo(row)
-  return `row-${info.status}`
+  return `row-${info.status}` + (getRowDirection(row) === 'exit' ? ' row-exit' : '')
 }
 
 const openDetailModal = (row) => {
@@ -1355,6 +1417,11 @@ onUnmounted(() => {
 
 .row-mismatch { background: rgba(244, 63, 94, 0.015); }
 .row-partial { background: rgba(234, 179, 8, 0.005); }
+
+/* Exit rows: grey background so they stand apart from entries */
+.comparison-table tr.row-exit { background: #262626; }
+.comparison-table tr.row-exit td { border-bottom-color: #303030; }
+.comparison-table tr.row-exit:hover { background: #2f2f2f !important; }
 
 /* Plate Badges Rules */
 .plate-badge {
