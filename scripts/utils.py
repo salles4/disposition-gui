@@ -1,6 +1,15 @@
 import re
 import random
 
+def is_token_rejection(status_code, body_text):
+    """True when the backend refused the bearer token (expired, revoked or invalid)."""
+    if status_code == 401:
+        return True
+    if status_code == 403:
+        text = (body_text or "").lower()
+        return any(k in text for k in ["token", "jwt", "expired", "revoked", "unauthorized"])
+    return False
+
 def sanitize_vehicle_type(raw_type):
     if not raw_type:
         return "car"

@@ -64,7 +64,7 @@ def is_real_device_payment_enabled():
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from scripts.config import TOKEN, API_BASE_URL
-from scripts.utils import format_plate
+from scripts.utils import format_plate, is_token_rejection
 
 # UNIFIED BASE HOST pointing to the API_BASE_URL config
 BASE_HOST = API_BASE_URL
@@ -137,6 +137,31 @@ def log_ram_telemetry(terminal_id: str, status: str, app_used: int, avail: int, 
 
 api_session = requests.Session()
 api_session.headers.update(HEADERS)
+
+# 🔑 API TOKEN WATCH: report rejections to the main backend so its token prompt shows
+api_token_rejected = False
+_engine_host = os.environ.get("HOST", "127.0.0.1")
+ENGINE_URL = f"http://{'127.0.0.1' if _engine_host in ('', '0.0.0.0') else _engine_host}:{os.environ.get('PORT', '5015')}"
+
+def set_api_token_rejected(rejected, detail=""):
+    global api_token_rejected
+    if rejected == api_token_rejected:
+        return
+    api_token_rejected = rejected
+    if rejected:
+        record(f"API token rejected by backend ({detail}). Pausing payments until a new token is saved in the dashboard.", "ERROR")
+    try:
+        requests.post(f"{ENGINE_URL}/api/token-status/api", json={"rejected": rejected, "detail": detail}, timeout=3)
+    except Exception as e:
+        record(f"Could not reach main backend at {ENGINE_URL} to report token status: {e}", "WARN")
+
+def watch_api_auth(response, *args, **kwargs):
+    if is_token_rejection(response.status_code, response.text):
+        set_api_token_rejected(True, f"HTTP {response.status_code}: {response.text[:120]}")
+    elif 200 <= response.status_code < 300:
+        set_api_token_rejected(False)
+
+api_session.hooks["response"].append(watch_api_auth)
 
 SEARCH_DELAY = 20  
 TIMEOUT_LIMIT = 60
@@ -392,7 +417,7 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 def get_next_available_plate(terminal_id):
-    if not is_real_device_payment_enabled():
+    if not is_real_device_payment_enabled() or api_token_rejected:
         return None
     global scheduled_payments
     with mailbox_lock:
@@ -528,6 +553,7 @@ def update_token():
     if not token:
         return jsonify({"status": "invalid"}), 400
     api_session.headers["Authorization"] = f"Bearer {token}"
+    set_api_token_rejected(False)
     record("API token updated from admin UI.", "INFO")
     return jsonify({"status": "updated"}), 200
 
@@ -931,6 +957,10 @@ def manage_scheduler():
                 socketio.sleep(2)
                 continue
 
+            # Bad token: retry slowly instead of hammering the API every 2s
+            if api_token_rejected:
+                socketio.sleep(30)
+
             if time.time() - last_sync_time > 30:
                 sync_queue_with_active_parked()
                 last_sync_time = time.time()
@@ -968,7 +998,9 @@ def manage_scheduler():
                             remove_from_queue(plate)
                             trigger_exit_immediately(plate, "CAR")
                             continue
-                        elif status == 'ERROR': continue
+                        elif status == 'ERROR':
+                            if api_token_rejected: break
+                            continue
                         
                         wait_seconds = WAIT_OPTIONS[wait_sequence_index]
                         due_time = current_time + timedelta(seconds=wait_seconds)

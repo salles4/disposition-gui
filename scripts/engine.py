@@ -19,7 +19,7 @@ from scripts.state import (
 )
 from scripts.logging_reporter import log_event
 from scripts.payment_handler import sync_and_process_parked_vehicles
-from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token, update_api_token, note_api_response
+from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token, update_api_token, note_api_response, set_api_auth_failed
 from scripts.utils import format_plate
 from scripts.api_metrics import set_broadcast_callback, set_response_hook, get_all_metrics, reset_metrics
 
@@ -308,6 +308,13 @@ def handle_update_api_token(data):
     socketio.emit('token_update_result', {'kind': 'api', 'ok': ok, 'message': message}, to=request.sid)
     if ok:
         log_event("API token updated from admin UI.", "ADMIN")
+
+@app.route('/api/token-status/api', methods=['POST'])
+def handle_teller_api_token_report():
+    # The teller service runs in its own process and reports token rejections here so the prompt shows
+    data = request.get_json(silent=True) or {}
+    set_api_auth_failed(bool(data.get('rejected')), f"teller service: {data.get('detail', '')}")
+    return {"ok": True}
 
 @socketio.on('dismiss_unregistered_camera')
 def handle_dismiss_unregistered_camera(data):

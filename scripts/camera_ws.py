@@ -13,7 +13,7 @@ import base64
 import scripts.config as config
 from scripts.config import API_BASE_URL, TERMINAL_ID, HEADERS, GLOBAL_CONFIG, EXIT_GATES
 from scripts.state import sim_stats, queue_lock, matching_lock, last_displayed_entry, last_displayed_exit
-from scripts.utils import format_plate, clean_gate_id, levenshtein_distance, get_random_gate, sanitize_vehicle_type
+from scripts.utils import format_plate, clean_gate_id, levenshtein_distance, get_random_gate, sanitize_vehicle_type, is_token_rejection
 
 
 def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
@@ -445,23 +445,25 @@ def update_ws_token(token):
 # --- API TOKEN STATUS (payment, exit and parked-list REST calls) ---
 _api_auth_failed = False
 
-def note_api_response(url, response):
-    """Called for every requests response; flags the API token as rejected on 401 and clears it on success."""
+def set_api_auth_failed(rejected, detail=""):
+    """Flip the API-token flag and refresh the prompt; also used by the teller service's reports."""
     global _api_auth_failed
+    if rejected == _api_auth_failed:
+        return
+    _api_auth_failed = rejected
+    if rejected:
+        print(f"[API TOKEN] Backend rejected the API token: {detail}", flush=True)
+    emit_token_status()
+
+def note_api_response(url, response):
+    """Called for every requests response; flags the API token as rejected on 401/403 and clears it on success."""
     if not str(url).startswith(config.API_BASE_URL):
         return
     status = response.status_code
-    if status == 401 or (status == 403 and any(k in response.text.lower() for k in ["token", "jwt", "expired", "unauthorized"])):
-        rejected = True
+    if is_token_rejection(status, response.text):
+        set_api_auth_failed(True, f"HTTP {status} on {url}: {response.text[:120]}")
     elif 200 <= status < 300:
-        rejected = False
-    else:
-        return
-    if rejected != _api_auth_failed:
-        _api_auth_failed = rejected
-        if rejected:
-            print(f"[API TOKEN] Backend rejected the API token (HTTP {status}) on {url}", flush=True)
-        emit_token_status()
+        set_api_auth_failed(False)
 
 def update_api_token(token):
     """Swap in a new REST API token, persist it to .env and push it to the teller service. Returns (ok, message)."""
