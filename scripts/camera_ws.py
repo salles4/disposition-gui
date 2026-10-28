@@ -9,6 +9,8 @@ from datetime import datetime
 from scripts.state import process_and_buffer_data
 
 from scripts.app_context import socketio
+import base64
+import scripts.config as config
 from scripts.config import API_BASE_URL, TERMINAL_ID, HEADERS, GLOBAL_CONFIG, EXIT_GATES
 from scripts.state import sim_stats, queue_lock, matching_lock, last_displayed_entry, last_displayed_exit
 from scripts.utils import format_plate, clean_gate_id, levenshtein_distance, get_random_gate, sanitize_vehicle_type
@@ -182,6 +184,20 @@ def on_ws_message(ws, message):
     from scripts.logging_reporter import log_event
     try:
         data = json.loads(message)
+        if data.get("event") == "auth-ok" and data.get("action") == "auth-ok":
+            print(f"[WS AUTH] Authenticated with backend stream (kind={data.get('kind')}).", flush=True)
+            global _ws_authed, _ws_auth_failed
+            _ws_authed = True
+            _ws_auth_failed = False
+            emit_token_status()
+            import scripts.state as state
+            state.is_hcp_connected = True
+            try:
+                socketio.emit('hcp_status_update', {'connected': True}, to='admin_room')
+            except Exception:
+                pass
+            return
+
         if data.get("event") == "available-space" and data.get("action") == "available-space":
             display = data.get("display", {})
             status = display.get("status")
@@ -345,6 +361,11 @@ def on_ws_error(ws, error):
 
 def on_ws_close(ws, close_status_code, close_msg):
     print(f"[WS CLOSE] Connection closed. Code: {close_status_code}, Message: {close_msg}", flush=True)
+    global _ws_auth_failed
+    # Socket opened and we sent the token, but the server hung up before "auth-ok": treat as a rejected token
+    if _ws_opened and not _ws_authed and not _ws_auth_failed:
+        _ws_auth_failed = True
+        emit_token_status()
     import scripts.state as state
     state.is_hcp_connected = False
     try:
@@ -353,21 +374,74 @@ def on_ws_close(ws, close_status_code, close_msg):
         pass
 
 def on_ws_open(ws):
-    import scripts.state as state
-    state.is_hcp_connected = True
+    # Authenticate first; the connection is only marked live once the server replies with "auth-ok"
+    global _ws_opened, _ws_authed
+    _ws_opened = True
+    _ws_authed = False
+    print("[WS OPEN] Connected. Sending auth message...", flush=True)
+    ws.send(json.dumps({"type": "auth", "token": config.WS_TOKEN}))
+
+
+# --- WS TOKEN STATUS (drives the token-expired prompt in the admin UI) ---
+_current_ws = None
+_ws_opened = False
+_ws_authed = False
+_ws_auth_failed = False
+
+def get_token_expiry(token):
+    """Return the JWT 'exp' claim (unix seconds) without verifying the signature, or None."""
     try:
-        socketio.emit('hcp_status_update', {'connected': True}, to='admin_room')
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload)).get("exp")
+    except Exception:
+        return None
+
+def get_token_status():
+    return {"exp": get_token_expiry(config.WS_TOKEN), "auth_failed": _ws_auth_failed}
+
+def emit_token_status(to='admin_room'):
+    try:
+        socketio.emit('token_status', get_token_status(), to=to)
     except Exception:
         pass
 
+def update_ws_token(token):
+    """Swap in a new WS token, persist it to .env and force a reconnect. Returns (ok, message)."""
+    global _ws_auth_failed
+    token = (token or "").strip()
+    exp = get_token_expiry(token)
+    if not exp:
+        return False, "That doesn't look like a valid token."
+    if exp <= time.time():
+        return False, "That token is already expired."
+
+    config.WS_TOKEN = token
+    try:
+        config.save_env_value("WS_TOKEN", token)
+    except Exception as e:
+        print(f"[WS TOKEN] Could not save token to .env: {e}", flush=True)
+    _ws_auth_failed = False
+    emit_token_status()
+
+    # Closing the socket drops run_forever(); the listener loop reconnects with the new token
+    if _current_ws:
+        try:
+            _current_ws.close()
+        except Exception:
+            pass
+    return True, "Token updated. Reconnecting..."
+
 def websocket_listener():
     from scripts.logging_reporter import log_event
+    global _current_ws, _ws_opened
     while True:
         try:
             # Explicitly log that a connection attempt is starting
             ws_url = API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
             print(f"[WS CONNECT] Attempting handshake with stream at {ws_url}...", flush=True)
-            
+            _ws_opened = False
+
             ws = websocket.WebSocketApp(
                 ws_url,
                 on_open=on_ws_open,
@@ -375,7 +449,8 @@ def websocket_listener():
                 on_error=on_ws_error,
                 on_close=on_ws_close
             )
-            
+            _current_ws = ws
+
             # Send a heartbeat ping every 60 seconds with 30s timeout.
             # If the server drops the connection, it triggers an instant auto-reconnect.
             ws.run_forever(ping_interval=60, ping_timeout=30)

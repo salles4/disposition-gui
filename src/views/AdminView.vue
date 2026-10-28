@@ -216,12 +216,14 @@
     <ApiMetrics :metrics="apiMetrics" @reset-metrics="resetApiMetrics" style="margin-top: 20px;" />
 
     <div v-if="toast" class="toast">{{ toast }}</div>
+    <TokenPrompt :socket="socket" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { io } from 'socket.io-client'
+import TokenPrompt from '@/components/TokenPrompt.vue'
 
 // Import Sub-components
 import TrackerGrid from '@/components/TrackerGrid.vue'

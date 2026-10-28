@@ -487,12 +487,14 @@
       </div>
     </Transition>
 
+    <TokenPrompt :socket="socket" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { io } from 'socket.io-client'
+import TokenPrompt from '@/components/TokenPrompt.vue'
 
 const displayPlate = (key) => {
   if (!key) return ''
@@ -1419,9 +1421,9 @@ onUnmounted(() => {
 .row-partial { background: rgba(234, 179, 8, 0.005); }
 
 /* Exit rows: grey background so they stand apart from entries */
-.comparison-table tr.row-exit { background: #262626; }
-.comparison-table tr.row-exit td { border-bottom-color: #303030; }
-.comparison-table tr.row-exit:hover { background: #2f2f2f !important; }
+.comparison-table tr.row-exit { background: #1e1e1e; }
+.comparison-table tr.row-exit td { border-bottom-color: #2a2a2a; }
+.comparison-table tr.row-exit:hover { background: #242424 !important; }
 
 /* Plate Badges Rules */
 .plate-badge {

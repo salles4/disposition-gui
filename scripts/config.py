@@ -28,6 +28,9 @@ HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json
 ADMIN_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJybmRzdXBlcmFkbWluIiwidHlwZSI6IkFETUlOIiwidGVybWluYWxJRCI6bnVsbCwianRpIjoiMWQxNmU0ZmQtNGU3NS00M2Q0LWEwNTYtMGQ3ZDZjM2Y2MWExIiwiaWF0IjoxNzkzMDY1MzY5LCJleHAiOjE3OTM2NzAxNjl9.81uCRZHRbT40jOrSpOpwGN1LaFk6mQNxzTDSWEw83WE"
 ADMIN_HEADERS = {"Authorization": f"Bearer {ADMIN_TOKEN}", "Content-Type": "application/json", "Accept": "application/json"}
 
+# Sent as the first message on the backend WebSocket ({"type":"auth","token":...}); server replies with "auth-ok".
+WS_TOKEN = os.environ.get("WS_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJSTkRTVVBFUkFETUlOIiwidHlwZSI6IkFETUlOIiwidGVybWluYWxJRCI6bnVsbCwianRpIjoiYjczMjAxMjUtNTdjNC00NTlmLWE3YmEtZDNkNzRmZTQ3ZGZkIiwiaWF0IjoxNzkzMTQ5NDAxLCJleHAiOjE3OTM3NTQyMDF9.xBPkD1DZLw-EV-AHkqlpkhb91kRU9t6JaO_YkzJeUVw")
+
 # ---------------------------------------------------------------------------
 # EXIT GATE CONFIGURATION
 # Change this list to match the active physical exit gates in your facility.
@@ -63,6 +66,24 @@ def load_config(log_callback=None):
         except Exception as e:
             if log_callback:
                 log_callback(f"Error loading config: {e}", "ERROR")
+
+def save_env_value(key, value):
+    """Set or replace KEY=value in the project .env so it survives restarts."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.env")
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            lines = f.read().splitlines()
+    replaced = False
+    for i, line in enumerate(lines):
+        if line.strip().split("=", 1)[0].strip() == key:
+            lines[i] = f"{key}={value}"
+            replaced = True
+    if not replaced:
+        lines.append(f"{key}={value}")
+    with open(env_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.environ[key] = value
 
 def save_config(log_callback=None):
     try:

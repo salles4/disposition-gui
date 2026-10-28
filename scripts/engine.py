@@ -19,7 +19,7 @@ from scripts.state import (
 )
 from scripts.logging_reporter import log_event
 from scripts.payment_handler import sync_and_process_parked_vehicles
-from scripts.camera_ws import websocket_listener
+from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token
 from scripts.utils import format_plate
 from scripts.api_metrics import set_broadcast_callback, get_all_metrics, reset_metrics
 
@@ -66,6 +66,7 @@ def handle_registration(data):
         socketio.emit('manual_verification_history', manual_history, to=request.sid)
         socketio.emit('api_metrics_update', get_all_metrics(), to=request.sid)
         emit_unregistered_cameras(to=request.sid)
+        emit_token_status(to=request.sid)
 
     log_event(f"Terminal Connected: {role.upper()} GATE {gate} (IP: {ip}).", "SYSTEM")
 
@@ -288,6 +289,17 @@ def handle_update_config(data):
     socketio.emit('config_sync', GLOBAL_CONFIG, to='admin_room')
     emit_unregistered_cameras()
     log_event(f"Config Updated.", "ADMIN")
+
+@socketio.on('request_token_status')
+def handle_request_token_status():
+    emit_token_status(to=request.sid)
+
+@socketio.on('update_ws_token')
+def handle_update_ws_token(data):
+    ok, message = update_ws_token((data or {}).get('token'))
+    socketio.emit('token_update_result', {'ok': ok, 'message': message}, to=request.sid)
+    if ok:
+        log_event("WebSocket token updated from admin UI.", "ADMIN")
 
 @socketio.on('dismiss_unregistered_camera')
 def handle_dismiss_unregistered_camera(data):
