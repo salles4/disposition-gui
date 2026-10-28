@@ -522,6 +522,15 @@ def add_to_queue():
         return jsonify({"status": "added"}), 200
     return jsonify({"status": "invalid"}), 400
 
+@app.route('/update-token', methods=['POST'])
+def update_token():
+    token = str((request.json or {}).get("token", "")).strip()
+    if not token:
+        return jsonify({"status": "invalid"}), 400
+    api_session.headers["Authorization"] = f"Bearer {token}"
+    record("API token updated from admin UI.", "INFO")
+    return jsonify({"status": "updated"}), 200
+
 @app.route('/get-queue', methods=['GET'])
 def get_queue():
     queue = []

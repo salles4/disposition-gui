@@ -1,59 +1,70 @@
 <template>
-  <div v-if="needsToken" class="token-prompt">
-    <button v-if="minimized" class="token-pill" @click="minimized = false" title="WebSocket token expired">
-      <span class="mdi mdi-key-alert"></span> Token expired
+  <div v-if="pending.length" class="token-prompt">
+    <button v-if="minimized" class="token-pill" @click="minimized = false" title="A backend token needs replacing">
+      <span class="mdi mdi-key-alert"></span> {{ pending.length > 1 ? 'Tokens expired' : 'Token expired' }}
     </button>
 
     <div v-else class="token-card">
       <div class="token-head">
         <span class="mdi mdi-key-alert"></span>
-        <span class="token-title">{{ status.auth_failed ? 'Token rejected' : 'Token expired' }}</span>
+        <span class="token-title">Token needs replacing</span>
         <button class="token-min" @click="minimized = true" title="Minimize">
           <span class="mdi mdi-minus"></span>
         </button>
       </div>
-      <form class="token-row" @submit.prevent="submit">
-        <input
-          v-model="tokenInput"
-          class="token-input"
-          type="text"
-          placeholder="Paste new token"
-          spellcheck="false"
-          autocomplete="off"
-        />
-        <button class="token-save" type="submit" :disabled="!tokenInput.trim() || saving">
-          {{ saving ? '...' : 'Save' }}
-        </button>
-      </form>
+      <div v-for="t in pending" :key="t.kind" class="token-section">
+        <div class="token-label">{{ t.label }} &middot; {{ t.rejected ? 'rejected' : 'expired' }}</div>
+        <form class="token-row" @submit.prevent="submit(t.kind)">
+          <input
+            v-model="inputs[t.kind]"
+            class="token-input"
+            type="text"
+            placeholder="Paste new token"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <button class="token-save" type="submit" :disabled="!inputs[t.kind].trim() || saving[t.kind]">
+            {{ saving[t.kind] ? '...' : 'Save' }}
+          </button>
+        </form>
+      </div>
       <div v-if="message" class="token-msg" :class="{ error: !messageOk }">{{ message }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   socket: { type: Object, required: true }
 })
 
-const status = ref({ exp: null, auth_failed: false })
+// ws = camera/disposition WebSocket token, api = REST token used for payments, exits and parked lists
+const TOKENS = [
+  { kind: 'ws', label: 'Camera stream', expKey: 'exp', failedKey: 'auth_failed', event: 'update_ws_token' },
+  { kind: 'api', label: 'Payment API', expKey: 'api_exp', failedKey: 'api_auth_failed', event: 'update_api_token' }
+]
+
+const status = ref({ exp: null, auth_failed: false, api_exp: null, api_auth_failed: false })
 const now = ref(Date.now() / 1000)
 const minimized = ref(false)
-const tokenInput = ref('')
-const saving = ref(false)
+const inputs = reactive({ ws: '', api: '' })
+const saving = reactive({ ws: false, api: false })
 const message = ref('')
 const messageOk = ref(false)
 
-const needsToken = computed(() => {
-  if (status.value.auth_failed) return true
-  return !!status.value.exp && now.value >= status.value.exp
-})
+const pending = computed(() => TOKENS
+  .map(t => {
+    const exp = status.value[t.expKey]
+    return { ...t, rejected: !!status.value[t.failedKey], expired: !!exp && now.value >= exp }
+  })
+  .filter(t => t.rejected || t.expired))
 
-const submit = () => {
-  saving.value = true
+const submit = (kind) => {
+  saving[kind] = true
   message.value = ''
-  props.socket.emit('update_ws_token', { token: tokenInput.value.trim() })
+  props.socket.emit(TOKENS.find(t => t.kind === kind).event, { token: inputs[kind].trim() })
 }
 
 const onStatus = (data) => {
@@ -62,10 +73,11 @@ const onStatus = (data) => {
 }
 
 const onResult = (res) => {
-  saving.value = false
+  const kind = res.kind || 'ws'
+  saving[kind] = false
   message.value = res.message
   messageOk.value = res.ok
-  if (res.ok) tokenInput.value = ''
+  if (res.ok) inputs[kind] = ''
 }
 
 const requestStatus = () => props.socket.emit('request_token_status')
@@ -106,6 +118,8 @@ onUnmounted(() => {
 .token-min { background: none; border: none; color: #777; cursor: pointer; padding: 0; font-size: 0.9rem; line-height: 1; }
 .token-min:hover { color: #ccc; }
 
+.token-section + .token-section { margin-top: 8px; }
+.token-label { color: #aaa; font-size: 0.7rem; margin-bottom: 3px; }
 .token-row { display: flex; gap: 6px; }
 .token-input {
   flex: 1; min-width: 0; background: #111; border: 1px solid #333; border-radius: 4px;

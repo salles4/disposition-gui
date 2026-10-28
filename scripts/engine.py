@@ -19,11 +19,12 @@ from scripts.state import (
 )
 from scripts.logging_reporter import log_event
 from scripts.payment_handler import sync_and_process_parked_vehicles
-from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token
+from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token, update_api_token, note_api_response
 from scripts.utils import format_plate
-from scripts.api_metrics import set_broadcast_callback, get_all_metrics, reset_metrics
+from scripts.api_metrics import set_broadcast_callback, set_response_hook, get_all_metrics, reset_metrics
 
 set_broadcast_callback(lambda data: socketio.emit('api_metrics_update', data, to='admin_room'))
+set_response_hook(note_api_response)
 
 def emit_unregistered_cameras(to='admin_room'):
     cams = sorted(unregistered_cameras.values(), key=lambda c: c["last_seen"], reverse=True)
@@ -297,9 +298,16 @@ def handle_request_token_status():
 @socketio.on('update_ws_token')
 def handle_update_ws_token(data):
     ok, message = update_ws_token((data or {}).get('token'))
-    socketio.emit('token_update_result', {'ok': ok, 'message': message}, to=request.sid)
+    socketio.emit('token_update_result', {'kind': 'ws', 'ok': ok, 'message': message}, to=request.sid)
     if ok:
         log_event("WebSocket token updated from admin UI.", "ADMIN")
+
+@socketio.on('update_api_token')
+def handle_update_api_token(data):
+    ok, message = update_api_token((data or {}).get('token'))
+    socketio.emit('token_update_result', {'kind': 'api', 'ok': ok, 'message': message}, to=request.sid)
+    if ok:
+        log_event("API token updated from admin UI.", "ADMIN")
 
 @socketio.on('dismiss_unregistered_camera')
 def handle_dismiss_unregistered_camera(data):

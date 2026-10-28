@@ -80,9 +80,15 @@
           <span class="mdi mdi-matrix" style="color: #ff9800;"></span>
           Detected Vehicles
         </h2>
+        <button @click="toggleFilters" :class="['btn-filter-toggle', { open: showFilters }]">
+          <span class="mdi mdi-filter-variant"></span>
+          {{ showFilters ? 'Hide Filters' : 'Show Filters' }}
+          <span v-if="activeFilterCount" class="filter-count-badge">{{ activeFilterCount }} active</span>
+          <span :class="['mdi', showFilters ? 'mdi-chevron-up' : 'mdi-chevron-down']"></span>
+        </button>
       </div>
-      
-      <div class="filter-controls-row">
+
+      <div v-show="showFilters" class="filter-controls-row">
         <!-- Left Section: Dropdowns -->
         <div class="filter-left-section">
           <div class="filter-group">
@@ -538,6 +544,31 @@ const selectedDirection = ref('ALL')
 const selectedGate = ref('ALL')
 const selectedMissing = ref('ALL')
 const availableDates = ref([])
+
+// Filter bar is collapsed by default; remember the viewer's choice
+const FILTERS_OPEN_KEY = 'comparison_filters_open'
+const readFiltersOpen = () => {
+  try { return localStorage.getItem(FILTERS_OPEN_KEY) === '1' } catch { return false }
+}
+const showFilters = ref(readFiltersOpen())
+const toggleFilters = () => {
+  showFilters.value = !showFilters.value
+  try { localStorage.setItem(FILTERS_OPEN_KEY, showFilters.value ? '1' : '0') } catch { /* storage unavailable */ }
+}
+
+// Non-default filters, shown on the toggle so collapsed filters never silently hide rows
+const activeFilterCount = computed(() => [
+  selectedDate.value !== 'today',
+  selectedResult.value !== 'ALL',
+  selectedDirection.value !== 'ALL',
+  selectedGate.value !== 'ALL',
+  selectedMissing.value !== 'ALL',
+  selectedVehicleType.value !== 'ALL',
+  selectedConfidence.value !== 'ALL',
+  selectedRouting.value !== 'ALL',
+  !excludeUnknown.value,
+  !!searchQuery.value.trim()
+].filter(Boolean).length)
 
 const fetchHistory = () => {
   socket.emit('request_reconciliation_history', { date: selectedDate.value })
@@ -1849,6 +1880,29 @@ onUnmounted(() => {
     border-color: rgba(244, 63, 94, 0.6);
     box-shadow: 0 0 15px rgba(244, 63, 94, 0.3);
   }
+}
+
+.btn-filter-toggle {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-filter-toggle:hover,
+.btn-filter-toggle.open { border-color: rgba(255, 152, 0, 0.4); color: #fff; }
+.filter-count-badge {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ff9800;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 /* Premium Filter Controls Layout */

@@ -85,6 +85,12 @@ def is_successful_response(response):
         pass
     return True
 
+_response_hook = None
+
+def set_response_hook(callback):
+    global _response_hook
+    _response_hook = callback
+
 def tracked_session_request(self, method, url, **kwargs):
     start = time.time()
     try:
@@ -92,6 +98,11 @@ def tracked_session_request(self, method, url, **kwargs):
         duration_ms = (time.time() - start) * 1000.0
         if is_successful_response(response):
             record_latency(method, url, duration_ms)
+        if _response_hook:
+            try:
+                _response_hook(url, response)
+            except Exception:
+                pass
         return response
     except Exception as e:
         raise e

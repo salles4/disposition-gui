@@ -22,10 +22,10 @@ load_env_file()
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://192.168.0.13:9080")
 TERMINAL_ID = "PoR-B1-02-00001"
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJybmRzdXBlcmFkbWluIiwidHlwZSI6IkFETUlOIiwidGVybWluYWxJRCI6bnVsbCwianRpIjoiMWQxNmU0ZmQtNGU3NS00M2Q0LWEwNTYtMGQ3ZDZjM2Y2MWExIiwiaWF0IjoxNzkzMDY1MzY5LCJleHAiOjE3OTM2NzAxNjl9.81uCRZHRbT40jOrSpOpwGN1LaFk6mQNxzTDSWEw83WE"
+TOKEN = os.environ.get("API_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJybmRzdXBlcmFkbWluIiwidHlwZSI6IkFETUlOIiwidGVybWluYWxJRCI6bnVsbCwianRpIjoiMWQxNmU0ZmQtNGU3NS00M2Q0LWEwNTYtMGQ3ZDZjM2Y2MWExIiwiaWF0IjoxNzkzMDY1MzY5LCJleHAiOjE3OTM2NzAxNjl9.81uCRZHRbT40jOrSpOpwGN1LaFk6mQNxzTDSWEw83WE")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "Accept": "application/json"}
 
-ADMIN_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJybmRzdXBlcmFkbWluIiwidHlwZSI6IkFETUlOIiwidGVybWluYWxJRCI6bnVsbCwianRpIjoiMWQxNmU0ZmQtNGU3NS00M2Q0LWEwNTYtMGQ3ZDZjM2Y2MWExIiwiaWF0IjoxNzkzMDY1MzY5LCJleHAiOjE3OTM2NzAxNjl9.81uCRZHRbT40jOrSpOpwGN1LaFk6mQNxzTDSWEw83WE"
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjowLCJ1c2VyX25hbWUiOiJybmRzdXBlcmFkbWluIiwidHlwZSI6IkFETUlOIiwidGVybWluYWxJRCI6bnVsbCwianRpIjoiMWQxNmU0ZmQtNGU3NS00M2Q0LWEwNTYtMGQ3ZDZjM2Y2MWExIiwiaWF0IjoxNzkzMDY1MzY5LCJleHAiOjE3OTM2NzAxNjl9.81uCRZHRbT40jOrSpOpwGN1LaFk6mQNxzTDSWEw83WE")
 ADMIN_HEADERS = {"Authorization": f"Bearer {ADMIN_TOKEN}", "Content-Type": "application/json", "Accept": "application/json"}
 
 # Sent as the first message on the backend WebSocket ({"type":"auth","token":...}); server replies with "auth-ok".
@@ -84,6 +84,15 @@ def save_env_value(key, value):
     with open(env_path, "w") as f:
         f.write("\n".join(lines) + "\n")
     os.environ[key] = value
+
+def set_api_token(token):
+    """Swap the REST API token in place so modules holding HEADERS/ADMIN_HEADERS see it immediately."""
+    global TOKEN, ADMIN_TOKEN
+    TOKEN = ADMIN_TOKEN = token
+    HEADERS["Authorization"] = f"Bearer {token}"
+    ADMIN_HEADERS["Authorization"] = f"Bearer {token}"
+    save_env_value("API_TOKEN", token)
+    save_env_value("ADMIN_TOKEN", token)
 
 def save_config(log_callback=None):
     try:

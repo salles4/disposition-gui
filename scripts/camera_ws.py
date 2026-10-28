@@ -402,7 +402,12 @@ def get_token_expiry(token):
         return None
 
 def get_token_status():
-    return {"exp": get_token_expiry(config.WS_TOKEN), "auth_failed": _ws_auth_failed}
+    return {
+        "exp": get_token_expiry(config.WS_TOKEN),
+        "auth_failed": _ws_auth_failed,
+        "api_exp": get_token_expiry(config.TOKEN),
+        "api_auth_failed": _api_auth_failed
+    }
 
 def emit_token_status(to='admin_room'):
     try:
@@ -435,6 +440,52 @@ def update_ws_token(token):
         except Exception:
             pass
     return True, "Token updated. Reconnecting..."
+
+
+# --- API TOKEN STATUS (payment, exit and parked-list REST calls) ---
+_api_auth_failed = False
+
+def note_api_response(url, response):
+    """Called for every requests response; flags the API token as rejected on 401 and clears it on success."""
+    global _api_auth_failed
+    if not str(url).startswith(config.API_BASE_URL):
+        return
+    status = response.status_code
+    if status == 401 or (status == 403 and any(k in response.text.lower() for k in ["token", "jwt", "expired", "unauthorized"])):
+        rejected = True
+    elif 200 <= status < 300:
+        rejected = False
+    else:
+        return
+    if rejected != _api_auth_failed:
+        _api_auth_failed = rejected
+        if rejected:
+            print(f"[API TOKEN] Backend rejected the API token (HTTP {status}) on {url}", flush=True)
+        emit_token_status()
+
+def update_api_token(token):
+    """Swap in a new REST API token, persist it to .env and push it to the teller service. Returns (ok, message)."""
+    global _api_auth_failed
+    token = (token or "").strip()
+    exp = get_token_expiry(token)
+    if not exp:
+        return False, "That doesn't look like a valid token."
+    if exp <= time.time():
+        return False, "That token is already expired."
+
+    try:
+        config.set_api_token(token)
+    except Exception as e:
+        print(f"[API TOKEN] Could not save token to .env: {e}", flush=True)
+    _api_auth_failed = False
+    emit_token_status()
+
+    # The teller service is a separate process with its own session headers
+    try:
+        requests.post("http://localhost:5010/update-token", json={"token": token}, timeout=3)
+    except Exception:
+        return True, "Token updated. Teller service not reachable; it will load the new token on restart."
+    return True, "Token updated."
 
 def websocket_listener():
     from scripts.logging_reporter import log_event
