@@ -31,7 +31,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
             log_event(f"[CAMERA] Real device payment enabled. Sending vehicle [{plate}] to Teller Service...", "PAY")
             entry_time_str = None
             try:
-                bill_res = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                bill_res = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                 if bill_res.status_code == 200 and bill_res.json().get("success"):
                     entry_time_str = bill_res.json().get("data", {}).get("time_in")
             except Exception as e:
@@ -55,7 +55,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
             while (time.time() - start_poll) < 180:
                 time.sleep(3)
                 try:
-                    bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                    bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                     if bill_chk.status_code != 200:
                         err_text = bill_chk.text.lower()
                         if "already paid" in err_text or "payment successful" in err_text or "enter park" in err_text or "not inside" in err_text or "exited" in err_text:
@@ -106,6 +106,10 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
                 socketio.emit('stats_update', sim_stats, to='admin_room')
             return
 
+        if not GLOBAL_CONFIG.get("enable_automatic_payment", True):
+            log_event(f"[CAMERA] Vehicle [{plate}] skipped (Real Device Payment and Auto-Pay are both OFF).", "SYSTEM")
+            return
+
         log_event(f"[CAMERA] Fetching live bill details for detected vehicle [{plate}]...", "SYSTEM")
         bill_data = None
         ref_no = None
@@ -113,7 +117,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
         
         for attempt in range(3):
             try:
-                bill = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+                bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
                 bill_json = bill.json()
                 if bill_json.get("success"):
                     bill_data = bill_json.get("data")

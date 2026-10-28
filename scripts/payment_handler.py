@@ -13,16 +13,12 @@ from scripts.logging_reporter import log_event
 from scripts.utils import format_plate, get_random_gate
 
 def execute_payment(plate_no, v_type):
-    if not GLOBAL_CONFIG.get("enable_automatic_payment", True):
-        log_event(f"[{plate_no}] Automatic payment disabled. Skipping payment sequence.", "PAY")
-        return False
-
     # CONDITION 1: Handle Real Device Payment
     if GLOBAL_CONFIG.get("real_device_payment"):
         log_event(f"[{plate_no}] Real device payment enabled. Sending to Teller Service...", "PAY")
         entry_time_str = None
         try:
-            bill = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+            bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
             bill_json = bill.json()
             if bill_json.get("success"):
                 bill_data = bill_json.get("data")
@@ -53,7 +49,7 @@ def execute_payment(plate_no, v_type):
         while (time.time() - start_poll) < 180:
             time.sleep(3)
             try:
-                bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                 if bill_chk.status_code != 200:
                     err_text = bill_chk.text.lower()
                     if "already paid" in err_text or "payment successful" in err_text or "enter park" in err_text:
@@ -88,10 +84,14 @@ def execute_payment(plate_no, v_type):
             log_event(f"[{plate_no}] Real device payment timed out or failed.", "ERROR")
             return False
 
+    if not GLOBAL_CONFIG.get("enable_automatic_payment", True):
+        log_event(f"[{plate_no}] Automatic payment disabled (Real Device Payment and Auto-Pay are both OFF).", "PAY")
+        return False
+
     # CONDITION 3: Handle Production Environment (Live API Mode Enabled)
     log_event(f"Executing live production API sequence for [{plate_no}]...", "SYSTEM")
     try:
-        bill = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+        bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
         try:
             bill_json = bill.json()
         except Exception:
@@ -217,15 +217,11 @@ def sync_and_process_parked_vehicles():
             
             plate, v_type = format_plate(plate, raw_v_type)
 
-            if not GLOBAL_CONFIG.get("enable_automatic_payment", True):
-                log_event(f"[SYNC] Automatic payment disabled. Skipping payment sequence for [{plate}].", "PAY")
-                continue
-            
             # --- REAL DEVICE PAYMENT HANDLING ---
             if GLOBAL_CONFIG.get("real_device_payment"):
                 entry_time_str = None
                 try:
-                    bill = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+                    bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
                     bill_json = bill.json()
                     if bill_json.get("success"):
                         bill_data = bill_json.get("data")
@@ -256,7 +252,7 @@ def sync_and_process_parked_vehicles():
                 while (time.time() - start_poll) < 180:
                     time.sleep(3)
                     try:
-                        bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                        bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                         if bill_chk.status_code != 200:
                             err_text = bill_chk.text.lower()
                             if "already paid" in err_text or "payment successful" in err_text or "enter park" in err_text:
@@ -330,9 +326,13 @@ def sync_and_process_parked_vehicles():
                 time.sleep(0.5)
                 continue
 
+            if not GLOBAL_CONFIG.get("enable_automatic_payment", True):
+                log_event(f"[SYNC] Active vehicle [{plate}] skipped (Real Device Payment and Auto-Pay are both OFF).", "PAY")
+                continue
+
             # --- LIVE PRODUCTION API HANDLING ---
             log_event(f"[SYNC] Fetching bill details for active vehicle [{plate}]...", "SYSTEM")
-            bill = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+            bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
             try:
                 bill_json = bill.json()
             except Exception:
@@ -468,7 +468,7 @@ def exit_all_paid_vehicles():
 
             if not is_paid:
                 try:
-                    bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate_no", json={"licence_plate_no": fmt_plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                    bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": fmt_plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                     err_text = bill_chk.text.lower()
                     if bill_chk.status_code != 200:
                         if any(k in err_text for k in ["already paid", "payment successful", "enter park", "exited", "not inside", "no transaction"]):

@@ -28,7 +28,7 @@ class bcolors:
 # ⚙️ CONFIGURATION
 # =========================================================
 SIM_MODE = os.getenv("SIM_MODE", "SCHEDULED").strip().upper()
-WAIT_OPTIONS = [1,1,2]
+WAIT_OPTIONS = [15] # Seconds between scheduled payments
 
 def get_cooldown():
     try:
@@ -49,6 +49,16 @@ def get_process_delay():
                 return int(config.get("teller_process_delay_seconds", 2))
     except: pass
     return 2
+
+def is_real_device_payment_enabled():
+    try:
+        config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+        if os.path.exists(config_file):
+            with open(config_file, "r") as f:
+                config = json.load(f)
+                return bool(config.get("real_device_payment", False))
+    except: pass
+    return False
 
 # Import token dynamically from config.py to ensure it is always valid and synchronized
 import sys
@@ -382,6 +392,8 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 def get_next_available_plate(terminal_id):
+    if not is_real_device_payment_enabled():
+        return None
     global scheduled_payments
     with mailbox_lock:
         master_list = []
@@ -644,7 +656,7 @@ def check_status_only(plate):
         if active_terminals:
             terminal_id = list(active_terminals.values())[0]
             
-        res = api_session.post(f"{BASE_HOST}/api/payment/plate_no",
+        res = api_session.post(f"{BASE_HOST}/api/payment/plate-no",
                                json={"licence_plate_no": plate, "terminal": terminal_id},
                                timeout=3)
                                
@@ -686,7 +698,7 @@ def process_vehicle_transaction(plate, selected_sid, selected_terminal):
     try:
         # Direct Payment Check / Bill retrieval
         try:
-            pay_info_res = api_session.post(f"{BASE_HOST}/api/payment/plate_no",
+            pay_info_res = api_session.post(f"{BASE_HOST}/api/payment/plate-no",
                                             json={"licence_plate_no": plate, "terminal": selected_terminal},
                                             timeout=5)
         except RequestException as e:
@@ -906,6 +918,10 @@ def manage_scheduler():
 
     while True:
         try:
+            if not is_real_device_payment_enabled():
+                socketio.sleep(2)
+                continue
+
             if time.time() - last_sync_time > 30:
                 sync_queue_with_active_parked()
                 last_sync_time = time.time()
@@ -945,12 +961,12 @@ def manage_scheduler():
                             continue
                         elif status == 'ERROR': continue
                         
-                        wait_minutes = WAIT_OPTIONS[wait_sequence_index]
-                        due_time = current_time + timedelta(minutes=wait_minutes)
+                        wait_seconds = WAIT_OPTIONS[wait_sequence_index]
+                        due_time = current_time + timedelta(seconds=wait_seconds)
                         scheduled_payments[plate] = due_time
-                        
+
                         time_str = due_time.strftime("%H:%M:%S")
-                        record(f"Scheduled [{plate}] at {time_str} (+{wait_minutes}m)", "INFO")
+                        record(f"Scheduled [{plate}] at {time_str} (+{wait_seconds}s)", "INFO")
                         wait_sequence_index = (wait_sequence_index + 1) % len(WAIT_OPTIONS)
 
             socketio.sleep(2)

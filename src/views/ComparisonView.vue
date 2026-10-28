@@ -6,7 +6,7 @@
         Disposition Module (Conference Room)
       </h1>
       <div class="launcher-actions">
-        <router-link to="/" class="btn btn-launcher btn-admin-launcher">
+        <router-link to="/admin" class="btn btn-launcher btn-admin-launcher">
           <span class="mdi mdi-arrow-left"></span> Back to Dashboard
         </router-link>
       </div>
