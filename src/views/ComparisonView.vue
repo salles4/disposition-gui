@@ -3,7 +3,7 @@
     <div class="admin-header-row">
       <h1 class="page-title" style="color: #17a2b8; display: flex; align-items: center; gap: 10px;">
         <span class="mdi mdi-table-eye"></span>
-        Disposition Module (Conference Room)
+        Disposition Module
       </h1>
       <div class="launcher-actions">
         <button
@@ -185,7 +185,7 @@
         </div>
       </div>
 
-      <div class="table-responsive" ref="tableScroller" @scroll.passive="updateBackToTop">
+      <div class="table-responsive">
         <table class="comparison-table">
           <thead>
             <tr>
@@ -548,19 +548,16 @@ const allTimeStats = ref({ matched: 0, corrected: 0, mismatch: 0, partial: 0, to
 const searchQuery = ref('')
 const displayLimit = ref(200)
 const loadMoreTrigger = ref(null)
-const tableScroller = ref(null)
 const pageScroller = ref(null)
 
-// Back-to-top shows once either the page or the table's own scroll is well down
+// Back-to-top shows once the page is scrolled well down
 const BACK_TO_TOP_THRESHOLD = 400
 const showBackToTop = ref(false)
 const updateBackToTop = () => {
-  showBackToTop.value = (tableScroller.value?.scrollTop || 0) > BACK_TO_TOP_THRESHOLD ||
-    (pageScroller.value?.scrollTop || 0) > BACK_TO_TOP_THRESHOLD
+  showBackToTop.value = (pageScroller.value?.scrollTop || 0) > BACK_TO_TOP_THRESHOLD
 }
 const scrollToTop = () => {
   const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
-  tableScroller.value?.scrollTo({ top: 0, behavior })
   pageScroller.value?.scrollTo({ top: 0, behavior })
 }
 let observer = null
@@ -1413,7 +1410,7 @@ onMounted(() => {
       displayLimit.value += 200
     }
   }, {
-    root: tableScroller.value,
+    root: pageScroller.value,
     rootMargin: '200px',
   })
   
@@ -1468,14 +1465,15 @@ onUnmounted(() => {
 }
 .db-dot { width: 6px; height: 6px; border-radius: 50%; background-color: #17a2b8; }
 
-.live-actions-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 25px; box-sizing: border-box; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.live-actions-card > .card-header-with-status, .live-actions-card > .filter-controls-row { flex-shrink: 0; }
+/* min-width: the card grows to the table's width so the whole page scrolls sideways on narrow screens */
+.live-actions-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 25px; box-sizing: border-box; flex: 0 0 auto; min-width: fit-content; display: flex; flex-direction: column; }
 .card-header-with-status h2 { font-size: 1.2rem; color: #ff9800; margin: 0; display: flex; align-items: center; gap: 8px; }
 .card-subtitle { font-size: 0.85rem; color: #888; margin-top: 5px; margin-bottom: 25px; text-align: left; }
 
 /* Grid Table Formatting (8 Clean Columns) */
-/* The table box fills the remaining height and scrolls on its own, so the sticky headers below stay pinned */
-.table-responsive { width: 100%; border: 1px solid #2a2a2a; border-radius: 8px; background: #151515; overflow: auto; flex: 1 1 auto; min-height: 200px; box-sizing: border-box; }
+/* The whole page scrolls, not the table box. overflow: clip rounds the corners without making the box a scroll
+   container, so the sticky headers below pin to the top of the page. */
+.table-responsive { width: 100%; border: 1px solid #2a2a2a; border-radius: 8px; background: #151515; overflow: visible; overflow: clip; box-sizing: border-box; }
 .comparison-table { width: 100%; min-width: 1200px; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 0.88rem; }
 .comparison-table th { position: sticky; top: 0; z-index: 10; background-color: #1f1f1f; color: #aaa; font-size: 0.78rem; padding: 16px; border-bottom: 2px solid #2a2a2a; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: inset 0 -2px 0 #2a2a2a; }
 .comparison-table td { padding: 14px 16px; border-bottom: 1px solid #222; vertical-align: middle; }
