@@ -91,7 +91,7 @@
               <span class="mdi mdi-information-outline info-icon"></span>
               <div class="tooltip-content">
                 <p class="tooltip-title">Split Exit Layout</p>
-                <p><strong></strong> On the Disposition table, shows entry plates in a left column and exit plates in a separate right column, with exit rows aligned to the right. When off, there is a single plate column and every row is left-aligned.</p>
+                <p><strong></strong> On the Disposition table, shows entry plates in a left column and exit plates in a separate right column. When off, there is a single plate column and every row is left-aligned.</p>
                 <p class="tech-tooltip"><strong>Technical:</strong> Controls <code>split_exit_layout</code>. Display only; applies live to every open Disposition page.</p>
               </div>
             </div>
@@ -100,6 +100,28 @@
         </div>
         <label class="switch">
           <input type="checkbox" :checked="config.split_exit_layout" @change="emit('toggle-split-exit-layout')">
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Split Exit Layout sub-option -->
+      <div v-if="config.split_exit_layout" class="settings-row sub-settings-row" :class="{ 'split-exit-active': config.exit_rows_right_aligned }">
+        <div class="settings-info">
+          <span class="label-with-info">
+            Right-Align Exit Rows:
+            <div class="tooltip-container">
+              <span class="mdi mdi-information-outline info-icon"></span>
+              <div class="tooltip-content">
+                <p class="tooltip-title">Right-Align Exit Rows</p>
+                <p><strong></strong> When on, exit rows are aligned to the right so they read toward the Exit Plate Key column. When off, the columns stay split but every row keeps the normal left alignment.</p>
+                <p class="tech-tooltip"><strong>Technical:</strong> Controls <code>exit_rows_right_aligned</code>. Only applies while Split Exit Layout is on.</p>
+              </div>
+            </div>
+          </span>
+          <span class="settings-subtext">{{ config.exit_rows_right_aligned ? 'Exit Rows Right' : 'All Rows Left' }}</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" :checked="config.exit_rows_right_aligned" @change="emit('toggle-exit-rows-right-aligned')">
           <span class="slider round"></span>
         </label>
       </div>
@@ -156,6 +178,7 @@ const emit = defineEmits([
   'toggle-real-device-payment',
   'toggle-automatic-payment',
   'toggle-split-exit-layout',
+  'toggle-exit-rows-right-aligned',
   'save-timers'
 ])
 </script>
@@ -185,6 +208,16 @@ const emit = defineEmits([
 
 .settings-row:last-of-type {
   border-bottom: none;
+}
+
+/* Indented option that belongs to the row above it */
+.sub-settings-row {
+  padding: 10px 0 10px 16px;
+  border-left: 2px solid #2a2a2a;
+  margin-left: 4px;
+}
+.sub-settings-row .label-with-info {
+  font-size: 0.85rem;
 }
 
 .settings-info {

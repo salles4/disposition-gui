@@ -282,6 +282,8 @@ def handle_update_config(data):
     GLOBAL_CONFIG['teller_cooldown_seconds'] = int(data.get('teller_cooldown', 3))
     if 'split_exit_layout' in data:
         GLOBAL_CONFIG['split_exit_layout'] = bool(data['split_exit_layout'])
+    if 'exit_rows_right_aligned' in data:
+        GLOBAL_CONFIG['exit_rows_right_aligned'] = bool(data['exit_rows_right_aligned'])
     if 'camera_mapping' in data:
         GLOBAL_CONFIG['camera_mapping'] = data['camera_mapping']
         for ip in list(unregistered_cameras):

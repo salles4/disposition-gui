@@ -200,7 +200,7 @@
               <th class="col-header-decision"><span class="mdi mdi-swap-horizontal-bold"></span> Process</th>
               <th style="text-align: center;"><span class="mdi mdi-list-status"></span> Validation</th>
               -->
-              <th v-if="splitExitLayout" class="col-header-exit" style="text-align: right;"><span class="mdi mdi-key-variant"></span> Exit Plate Key</th>
+              <th v-if="splitExitLayout" class="col-header-exit" :style="{ textAlign: exitRowsRightAligned ? 'right' : 'left' }"><span class="mdi mdi-key-variant"></span> Exit Plate Key</th>
             </tr>
           </thead>
           <!-- Rows slide in, and glide into place when new ones are inserted or filters change -->
@@ -215,7 +215,7 @@
             <tr 
               v-for="(row, index) in visibleComparisonList" 
               :key="row.plate_key || index" 
-              :class="['clickable-row', getRowClass(row), { 'row-align-right': splitExitLayout && getRowDirection(row) === 'exit' }]"
+              :class="['clickable-row', getRowClass(row), { 'row-align-right': splitExitLayout && exitRowsRightAligned && getRowDirection(row) === 'exit' }]"
               :style="{ '--row-i': Math.min(index, 12) }"
               @click="openDetailModal(row)"
             >
@@ -594,8 +594,10 @@ const toggleFilters = () => {
   try { localStorage.setItem(FILTERS_OPEN_KEY, showFilters.value ? '1' : '0') } catch { /* storage unavailable */ }
 }
 
-// Dashboard setting (split_exit_layout): Exit plate column + right-aligned exit rows; on by default
+// Dashboard settings, both on by default:
+// split_exit_layout = separate Exit plate column; exit_rows_right_aligned = exit rows read from the right (split only)
 const splitExitLayout = ref(true)
+const exitRowsRightAligned = ref(true)
 
 // Light mode for readability in bright surroundings (remembered per browser)
 const LIGHT_MODE_KEY = 'comparison_light_mode'
@@ -1125,9 +1127,9 @@ const getHigherConfidenceCamera = (row) => {
 
 const getConfidenceClass = (confidence) => {
   const conf = parseFloat(confidence) || 0
-  if (conf <= 40) return 'conf-low'
-  if (conf <= 80) return 'conf-mid'
-  return 'conf-high'
+  if (conf < 85) return 'conf-low'    // red
+  if (conf <= 95) return 'conf-mid'   // yellow
+  return 'conf-high'                  // green
 }
 
 const getValidationInfo = (row) => {
@@ -1349,6 +1351,7 @@ onMounted(() => {
   // Table layout is a dashboard setting, pushed to every admin page on connect and whenever it changes
   socket.on('config_sync', (cfg) => {
     splitExitLayout.value = cfg.split_exit_layout !== false
+    exitRowsRightAligned.value = cfg.exit_rows_right_aligned !== false
   })
 
   socket.on('all_time_reconciliation_stats_response', (statsData) => {
@@ -1482,7 +1485,7 @@ onUnmounted(() => {
 .text-purple { color: #a855f7 !important; font-weight: bold; }
 .conf-text { color: #555; }
 .conf-text.conf-low { color: #ff4a5a !important; font-weight: bold; }
-.conf-text.conf-mid { color: #00e5ff !important; font-weight: bold; }
+.conf-text.conf-mid { color: #eab308 !important; font-weight: bold; }
 .conf-text.conf-high { color: #28a745 !important; font-weight: bold; }
 .gate-tag { font-size: 0.72rem; color: #666; display: flex; align-items: center; gap: 4px; margin-top: 2px; }
 
@@ -2270,7 +2273,7 @@ onUnmounted(() => {
 .light .type-text { color: #374151; }
 .light .conf-text { color: #6b7280; }
 .light .conf-text.conf-low { color: #dc2626 !important; }
-.light .conf-text.conf-mid { color: #0e7490 !important; }
+.light .conf-text.conf-mid { color: #a16207 !important; }
 .light .conf-text.conf-high { color: #15803d !important; }
 
 .light .plate-badge { background: #f3f4f6; color: #111827; border-color: #cbd2d9; }

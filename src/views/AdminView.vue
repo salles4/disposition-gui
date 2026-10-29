@@ -35,6 +35,7 @@
           @toggle-real-device-payment="toggleRealDevicePayment"
           @toggle-automatic-payment="toggleAutomaticPayment"
           @toggle-split-exit-layout="toggleSplitExitLayout"
+          @toggle-exit-rows-right-aligned="toggleExitRowsRightAligned"
           @save-timers="saveTimers"
         />
 
@@ -254,7 +255,7 @@ const registerTerminal = () => {
 }
 
 const stats = reactive({ queued: 0, parked: 0, paid: 0, exited: 0 })
-const config = reactive({ pay_delay_seconds: 60, exit_delay_seconds: 20, camera_auto_exit_only: true, real_device_payment: false, enable_automatic_payment: true, teller_process_delay_seconds: 2, teller_cooldown_seconds: 3, split_exit_layout: true })
+const config = reactive({ pay_delay_seconds: 60, exit_delay_seconds: 20, camera_auto_exit_only: true, real_device_payment: false, enable_automatic_payment: true, teller_process_delay_seconds: 2, teller_cooldown_seconds: 3, split_exit_layout: true, exit_rows_right_aligned: true })
 
 const cameraMapping = ref({})
 const unregisteredCameras = ref([])
@@ -384,6 +385,7 @@ const saveTimers = () => {
     teller_process_delay: config.teller_process_delay_seconds,
     teller_cooldown: config.teller_cooldown_seconds,
     split_exit_layout: config.split_exit_layout,
+    exit_rows_right_aligned: config.exit_rows_right_aligned,
     camera_mapping: cameraMapping.value
   })
   showToast('Settings successfully synced globally.')
@@ -406,6 +408,11 @@ const toggleAutomaticPayment = () => {
 
 const toggleSplitExitLayout = () => {
   config.split_exit_layout = !config.split_exit_layout
+  saveTimers()
+}
+
+const toggleExitRowsRightAligned = () => {
+  config.exit_rows_right_aligned = !config.exit_rows_right_aligned
   saveTimers()
 }
 
@@ -450,6 +457,7 @@ onMounted(() => {
     config.teller_process_delay_seconds = newConfig.teller_process_delay_seconds || 2
     config.teller_cooldown_seconds = newConfig.teller_cooldown_seconds || 3
     config.split_exit_layout = newConfig.split_exit_layout !== false
+    config.exit_rows_right_aligned = newConfig.exit_rows_right_aligned !== false
     cameraMapping.value = newConfig.camera_mapping || {}
   })
 
