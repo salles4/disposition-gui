@@ -1,5 +1,5 @@
 <template>
-  <div class="admin-container">
+  <div class="admin-container" ref="pageScroller" @scroll.passive="updateBackToTop">
     <div class="admin-header-row">
       <h1 style="color: #17a2b8; display: flex; align-items: center; gap: 10px;">
         <span class="mdi mdi-table-eye"></span>
@@ -28,47 +28,19 @@
           {{ apiPort }}: {{ isHcpConnected ? 'ONLINE' : 'OFFLINE' }}
         </div>
       </div>
+      <!-- Labels show as a popup on hover/focus (data-tip) to keep the KPI row compact -->
       <div class="summary-stats-cards">
-        <div class="stat-card stat-total">
-          <span class="mdi mdi-database-outline icon"></span>
+        <div
+          v-for="kpi in kpiCards"
+          :key="kpi.key"
+          :class="['stat-card', kpi.cls]"
+          :data-tip="kpi.tip"
+          :aria-label="`${kpi.tip}: ${kpi.value}`"
+          tabindex="0"
+        >
+          <span :class="['mdi', kpi.icon, 'icon']"></span>
           <div class="stat-details">
-            <span class="stat-label">Total Streams</span>
-            <span class="stat-value">{{ activeStats.total }}</span>
-          </div>
-        </div>
-        <div class="stat-card stat-matched">
-          <span class="mdi mdi-check-circle-outline icon"></span>
-          <div class="stat-details">
-            <span class="stat-label">Matched ({{ getPercentage(activeStats.matched, activeStats.total) }})</span>
-            <span class="stat-value">{{ activeStats.matched }}</span>
-          </div>
-        </div>
-        <div class="stat-card stat-partial">
-          <span class="mdi mdi-clock-outline icon"></span>
-          <div class="stat-details">
-            <span class="stat-label">Partial ({{ getPercentage(activeStats.partial, activeStats.total) }})</span>
-            <span class="stat-value">{{ activeStats.partial }}</span>
-          </div>
-        </div>
-        <div class="stat-card stat-corrected">
-          <span class="mdi mdi-alert-decagram-outline icon"></span>
-          <div class="stat-details">
-            <span class="stat-label">Auto-Resolved ({{ getPercentage(activeStats.corrected, activeStats.total) }})</span>
-            <span class="stat-value">{{ activeStats.corrected }}</span>
-          </div>
-        </div>
-        <div class="stat-card stat-mismatch">
-          <span class="mdi mdi-alert-circle-outline icon"></span>
-          <div class="stat-details">
-            <span class="stat-label">Mismatch ({{ getPercentage(activeStats.mismatch, activeStats.total) }})</span>
-            <span class="stat-value">{{ activeStats.mismatch }}</span>
-          </div>
-        </div>
-        <div class="stat-card stat-ticketed">
-          <span class="mdi mdi-ticket-confirmation-outline icon"></span>
-          <div class="stat-details">
-            <span class="stat-label">Ticket Process ({{ getPercentage(activeStats.ticketRouted, activeStats.total) }})</span>
-            <span class="stat-value">{{ activeStats.ticketRouted }}</span>
+            <span class="stat-value">{{ kpi.value }}</span>
           </div>
         </div>
       </div>
@@ -203,24 +175,28 @@
         </div>
       </div>
 
-      <div class="table-responsive">
+      <div class="table-responsive" ref="tableScroller" @scroll.passive="updateBackToTop">
         <table class="comparison-table">
           <thead>
             <tr>
               <th><span class="mdi mdi-clock-outline"></span> Timestamp</th>
-              <th><span class="mdi mdi-key-variant"></span> Target Plate Key</th>
+              <th><span class="mdi mdi-key-variant"></span> Entry Plate Key</th>
               <th class="col-header-front"><span class="mdi mdi-camera"></span> Front Camera</th>
               <th class="col-header-back"><span class="mdi mdi-camera-rear"></span> Back Camera</th>
               <th class="col-header-hik"><span class="mdi mdi-server-network"></span> HikCentral Data</th>
               <th class="col-header-ops"><span class="mdi mdi-account-shield"></span> Admin Read</th>
               <th class="col-header-ops"><span class="mdi mdi-swap-horizontal"></span> Disposition</th>
+              <!-- Hidden for now: Process / Validation columns
               <th class="col-header-decision"><span class="mdi mdi-swap-horizontal-bold"></span> Process</th>
               <th style="text-align: center;"><span class="mdi mdi-list-status"></span> Validation</th>
+              -->
+              <th class="col-header-exit"><span class="mdi mdi-key-variant"></span> Exit Plate Key</th>
             </tr>
           </thead>
-          <tbody>
-            <tr v-if="visibleComparisonList.length === 0">
-              <td colspan="9" class="no-data-row">
+          <!-- Rows slide in, and glide into place when new ones are inserted or filters change -->
+          <TransitionGroup tag="tbody" name="row">
+            <tr v-if="visibleComparisonList.length === 0" key="__empty__">
+              <td colspan="8" class="no-data-row">
                 <span v-if="searchQuery" class="mdi mdi-database-search" style="margin-right: 6px;"></span>
                 <span v-else class="mdi mdi-loading mdi-spin" style="margin-right: 6px;"></span>
                 {{ searchQuery ? 'No records match search filter' : 'Awaiting vehicle streaming payloads...' }}
@@ -230,11 +206,13 @@
               v-for="(row, index) in visibleComparisonList" 
               :key="row.plate_key || index" 
               :class="['clickable-row', getRowClass(row)]"
+              :style="{ '--row-i': Math.min(index, 12) }"
               @click="openDetailModal(row)"
             >
               <td class="text-muted">{{ formatTime(row.first_seen) }}</td>
               
               <td class="text-bold text-highlight">
+                <template v-if="getRowDirection(row) !== 'exit'">
                 <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
                 <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
                   <span class="badge-sm" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
@@ -252,9 +230,11 @@
                     {{ row.direction || 'entry' }}
                   </span>
                 </div>
+                </template>
               </td>
-              
+
               <td class="col-cell-front">
+                <Transition name="cell-fade" mode="out-in">
                 <div v-if="row.front_camera" class="source-cell-block">
                   <div :class="['plate-badge', 'badge-front', { 'badge-chosen': getHigherConfidenceCamera(row) === 'front' }]">{{ row.front_camera.plate || displayPlate(row.plate_key) }}</div>
                   <div class="nested-type-row">
@@ -266,9 +246,11 @@
                   </div>
                 </div>
                 <span v-else class="text-muted">— Missing —</span>
+                </Transition>
               </td>
               
               <td class="col-cell-back">
+                <Transition name="cell-fade" mode="out-in">
                 <div v-if="row.back_camera" class="source-cell-block">
                   <div :class="['plate-badge', 'badge-back', { 'badge-chosen': getHigherConfidenceCamera(row) === 'back' }]">{{ row.back_camera.plate || displayPlate(row.plate_key) }}</div>
                   <div class="nested-type-row">
@@ -280,9 +262,11 @@
                   </div>
                 </div>
                 <span v-else class="text-muted">— Missing —</span>
+                </Transition>
               </td>
               
               <td class="col-cell-hik">
+                <Transition name="cell-fade" mode="out-in">
                 <div v-if="row.hikcentral" class="source-cell-block">
                   <div class="plate-badge badge-hik">{{ row.hikcentral.plate || 'EMPTY' }}</div>
                   <div class="nested-type-row">
@@ -293,9 +277,11 @@
                   </div>
                 </div>
                 <span v-else class="text-muted">— Missing —</span>
+                </Transition>
               </td>
 
               <td class="col-cell-ops">
+                <Transition name="cell-fade" mode="out-in">
                 <div v-if="row.core_event" class="source-cell-block">
                   <div class="plate-badge badge-admin">{{ row.core_event.plate_no || displayPlate(row.plate_key) }}</div>
                   <div class="nested-type-row">
@@ -306,14 +292,33 @@
                   </div>
                 </div>
                 <span v-else class="text-muted">— Pending —</span>
+                </Transition>
               </td>
 
               <td class="col-cell-ops" style="vertical-align: middle;">
-                <span :class="['dispo-tag', (row.disposition || 'NA').toLowerCase().replace(' ', '_')]">
+                <Transition name="cell-fade" mode="out-in">
+                <span :key="row.disposition || 'NA'" :class="['dispo-tag', (row.disposition || 'NA').toLowerCase().replace(' ', '_')]">
                   {{ row.disposition || 'NA' }}
                 </span>
+                </Transition>
               </td>
 
+              <td class="col-cell-exit text-bold text-highlight">
+                <template v-if="getRowDirection(row) === 'exit'">
+                  <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
+                  <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
+                    <span class="badge-sm" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                      {{ row.gate || 'GATE 1' }}
+                    </span>
+                    <span class="badge-sm" style="background: rgba(23,162,184,0.15); color: #00bcd4; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                      exit
+                    </span>
+                  </div>
+                </template>
+              </td>
+
+              <!-- Hidden for now: Process / Validation columns (v-if instead of a comment, since the cell already contains one) -->
+              <template v-if="false">
               <td class="col-cell-decision" style="vertical-align: middle;">
                 <span :class="['decision-tag', getTicketingDecision(row).toLowerCase()]">
                   {{ getTicketingDecision(row) === 'TICKET' ? 'Ticket' : 'System' }}
@@ -339,18 +344,26 @@
                   </div> -->
                 </div>
               </td>
+              </template>
             </tr>
-          </tbody>
+          </TransitionGroup>
         </table>
+        <div v-if="filteredComparisonList.length > displayLimit" class="load-more-container">
+          <button @click="displayLimit += 200" class="btn-load-more">
+            <span class="mdi mdi-loading mdi-spin text-orange"></span>
+            Loading More Records (Showing {{ displayLimit }} of {{ filteredComparisonList.length }})
+          </button>
+        </div>
+        <!-- Inside the scrolling table box so infinite scroll follows the table's own scroll -->
+        <div ref="loadMoreTrigger" style="height: 10px; margin-top: 10px;"></div>
       </div>
-      <div v-if="filteredComparisonList.length > displayLimit" class="load-more-container">
-        <button @click="displayLimit += 200" class="btn-load-more">
-          <span class="mdi mdi-loading mdi-spin text-orange"></span>
-          Loading More Records (Showing {{ displayLimit }} of {{ filteredComparisonList.length }})
-        </button>
-      </div>
-      <div ref="loadMoreTrigger" style="height: 10px; margin-top: 10px;"></div>
     </div>
+
+    <Transition name="back-to-top">
+      <button v-if="showBackToTop" class="btn-back-to-top" @click="scrollToTop" aria-label="Back to top" title="Back to top">
+        <span class="mdi mdi-arrow-up"></span>
+      </button>
+    </Transition>
 
     <Transition name="modal">
       <div class="modal-overlay" v-if="selectedVehicle" @click.self="closeModal">
@@ -524,6 +537,21 @@ const allTimeStats = ref({ matched: 0, corrected: 0, mismatch: 0, partial: 0, to
 const searchQuery = ref('')
 const displayLimit = ref(200)
 const loadMoreTrigger = ref(null)
+const tableScroller = ref(null)
+const pageScroller = ref(null)
+
+// Back-to-top shows once either the page or the table's own scroll is well down
+const BACK_TO_TOP_THRESHOLD = 400
+const showBackToTop = ref(false)
+const updateBackToTop = () => {
+  showBackToTop.value = (tableScroller.value?.scrollTop || 0) > BACK_TO_TOP_THRESHOLD ||
+    (pageScroller.value?.scrollTop || 0) > BACK_TO_TOP_THRESHOLD
+}
+const scrollToTop = () => {
+  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+  tableScroller.value?.scrollTo({ top: 0, behavior })
+  pageScroller.value?.scrollTo({ top: 0, behavior })
+}
 let observer = null
 
 // System status states
@@ -1000,6 +1028,19 @@ const getPercentage = (count, total) => {
   return ((count / total) * 100).toFixed(1) + '%'
 }
 
+const kpiCards = computed(() => {
+  const s = activeStats.value
+  const pct = (n) => getPercentage(n, s.total)
+  return [
+    { key: 'total', cls: 'stat-total', icon: 'mdi-database-outline', value: s.total, tip: 'Total Streams' },
+    { key: 'matched', cls: 'stat-matched', icon: 'mdi-check-circle-outline', value: s.matched, tip: `Matched (${pct(s.matched)})` },
+    { key: 'partial', cls: 'stat-partial', icon: 'mdi-clock-outline', value: s.partial, tip: `Partial (${pct(s.partial)})` },
+    { key: 'corrected', cls: 'stat-corrected', icon: 'mdi-alert-decagram-outline', value: s.corrected, tip: `Auto-Resolved (${pct(s.corrected)})` },
+    { key: 'mismatch', cls: 'stat-mismatch', icon: 'mdi-alert-circle-outline', value: s.mismatch, tip: `Mismatch (${pct(s.mismatch)})` },
+    { key: 'ticketed', cls: 'stat-ticketed', icon: 'mdi-ticket-confirmation-outline', value: s.ticketRouted, tip: `Ticket Process (${pct(s.ticketRouted)})` },
+  ]
+})
+
 const filteredComparisonList = computed(() => {
   let list = kpiFilteredList.value
 
@@ -1338,7 +1379,7 @@ onMounted(() => {
       displayLimit.value += 200
     }
   }, {
-    root: document.querySelector('.admin-container'),
+    root: tableScroller.value,
     rootMargin: '200px',
   })
   
@@ -1393,9 +1434,10 @@ onUnmounted(() => {
 .card-subtitle { font-size: 0.85rem; color: #888; margin-top: 5px; margin-bottom: 25px; text-align: left; }
 
 /* Grid Table Formatting (8 Clean Columns) */
-.table-responsive { width: 100%; border: 1px solid #2a2a2a; border-radius: 8px; background: #151515; overflow-x: auto; }
+/* The table box scrolls on its own (capped to the screen) so the sticky headers below stay pinned */
+.table-responsive { width: 100%; border: 1px solid #2a2a2a; border-radius: 8px; background: #151515; overflow: auto; max-height: calc(100vh - 80px); }
 .comparison-table { width: 100%; min-width: 1200px; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 0.88rem; }
-.comparison-table th { position: sticky; top: -40px; z-index: 10; background-color: #1f1f1f; color: #aaa; font-size: 0.78rem; padding: 16px; border-bottom: 2px solid #2a2a2a; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: inset 0 -2px 0 #2a2a2a; }
+.comparison-table th { position: sticky; top: 0; z-index: 10; background-color: #1f1f1f; color: #aaa; font-size: 0.78rem; padding: 16px; border-bottom: 2px solid #2a2a2a; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: inset 0 -2px 0 #2a2a2a; }
 .comparison-table td { padding: 14px 16px; border-bottom: 1px solid #222; vertical-align: middle; }
 
 .clickable-row { cursor: pointer; transition: background 0.2s ease; }
@@ -1427,6 +1469,7 @@ onUnmounted(() => {
 
 /* Decision Column and Tags Styling */
 .col-cell-decision { border-left: 1px solid #2d2d2d; background: rgba(255, 255, 255, 0.002); text-align: center; }
+.col-cell-exit { border-left: 1px solid #2d2d2d; }
 .decision-tag {
   display: inline-block;
   padding: 4px 10px;
@@ -1596,19 +1639,88 @@ onUnmounted(() => {
   font-size: 0.68rem;
 }
 
-/* Keyframe animations */
-@keyframes row-slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Back-to-top button */
+.btn-back-to-top {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 50; /* above sticky headers, below the detail modal (999) */
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid #333;
+  background: #1f1f1f;
+  color: #17a2b8;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
-.clickable-row {
-  animation: row-slide-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+.btn-back-to-top:hover {
+  transform: translateY(-2px);
+  background: #262626;
+  border-color: #17a2b8;
+}
+.btn-back-to-top:focus-visible {
+  outline: 2px solid #17a2b8;
+  outline-offset: 2px;
+}
+.back-to-top-enter-active, .back-to-top-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.back-to-top-enter-from, .back-to-top-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* Table row transitions (TransitionGroup name="row") */
+.row-enter-active {
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: calc(var(--row-i, 0) * 25ms); /* light stagger when many rows load at once */
+}
+.row-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+/* Leaving rows drop out of the layout right away so the remaining rows can glide into place */
+.row-leave-active {
+  display: none;
+}
+.row-move {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Source cells fade in when a reading arrives on an existing row */
+.cell-fade-enter-active, .cell-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.cell-fade-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.cell-fade-leave-to {
+  opacity: 0;
+}
+
+/* Hover accent bar on the first cell */
+.clickable-row td:first-child {
+  transition: box-shadow 0.2s ease;
+}
+.clickable-row:hover td:first-child {
+  box-shadow: inset 3px 0 0 #17a2b8;
+}
+.clickable-row:active {
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-enter-active, .row-move, .cell-fade-enter-active, .cell-fade-leave-active,
+  .clickable-row td:first-child, .btn-back-to-top, .back-to-top-enter-active, .back-to-top-leave-active {
+    transition: none;
+  }
 }
 
 @keyframes pulse-slow {
@@ -1678,10 +1790,43 @@ onUnmounted(() => {
   border-radius: 6px;
   min-width: 110px;
   transition: all 0.25s ease;
+  position: relative;
+  cursor: default;
+  outline: none;
 }
-.stat-card:hover {
+.stat-card:hover, .stat-card:focus-visible {
   transform: translateY(-2px);
   background: rgba(255, 255, 255, 0.04);
+  z-index: 30; /* keep the popup above the sticky table headers */
+}
+/* Label popup (replaces the inline labels) */
+.stat-card::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translate(-50%, -4px);
+  opacity: 0;
+  pointer-events: none;
+  background: #1f1f1f;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.stat-card:hover::after, .stat-card:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .stat-card, .stat-card::after { transition: none; }
 }
 .stat-card .icon {
   font-size: 1.4rem;
@@ -1689,12 +1834,6 @@ onUnmounted(() => {
 .stat-details {
   display: flex;
   flex-direction: column;
-}
-.stat-label {
-  font-size: 0.72rem;
-  color: #777;
-  text-transform: uppercase;
-  font-weight: 600;
 }
 .stat-value {
   font-size: 1.1rem;

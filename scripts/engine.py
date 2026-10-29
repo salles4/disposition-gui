@@ -14,7 +14,7 @@ from scripts.app_context import app, socketio
 from scripts.config import GLOBAL_CONFIG, load_config, save_config
 from scripts.state import (
     queue_lock, connected_terminals, sim_stats, logs_history,
-    pending_reconciliations, reconciliation_lock, daily_reconciliation_history, process_and_buffer_data,
+    pending_reconciliations, reconciliation_lock, process_and_buffer_data,
     all_time_stats, unregistered_cameras
 )
 from scripts.logging_reporter import log_event
@@ -48,13 +48,11 @@ def handle_registration(data):
     connected_terminals[request.sid] = {"role": role, "gate": gate, "ip": ip}
     
     if role == 'admin':
-        from scripts.state import load_recent_detections
-        load_recent_detections()
-        
         socketio.emit('config_sync', GLOBAL_CONFIG, to=request.sid)
         socketio.emit('stats_update', sim_stats, to=request.sid)
         socketio.emit('logs_history', logs_history, to=request.sid)
-        socketio.emit('reconciliation_history_response', daily_reconciliation_history, to=request.sid)
+        # History is not sent here: the dashboard requests it right after registering (request_reconciliation_history),
+        # and the list imported into this module goes stale once state.py swaps it (day rollover / cleanup)
         socketio.emit('all_time_reconciliation_stats_response', all_time_stats, to=request.sid)
         
         from scripts.state import recent_detections, is_hcp_connected, get_available_reconciliation_dates
@@ -151,8 +149,10 @@ def handle_submit_manual_verification(data):
             
         # Log to CSV ONLY if status is CORRECT (meaning image and detected plate are the same)
         if status == "CORRECT":
-            # Retrieve base64 images from media if available
-            enriched_det = enrich_detection_images(target_det)
+            # Retrieve base64 images from media if available (blank the small crops so the media lookup isn't skipped)
+            enriched_det = enrich_detection_images({**target_det, "plate_image_front": "", "plate_image_back": ""})
+            enriched_det["plate_image_front"] = enriched_det.get("plate_image_front") or target_det.get("plate_image_front")
+            enriched_det["plate_image_back"] = enriched_det.get("plate_image_back") or target_det.get("plate_image_back")
             
             log_manual_verification(
                 stage=target_det.get("stage", "ENTRY"),
@@ -446,7 +446,7 @@ def analyze_camera_payload(payload_package):
                 elif "vehicle" in fname or "detection" in fname:
                     base64_scene_img = data_uri
 
-        print(f"[CAMERA PARSED] IP: {ip_address} | Plate: {plate} | Confidence: {confidence} | VehicleType: {v_type}", flush=True)
+        # print(f"[CAMERA PARSED] IP: {ip_address} | Plate: {plate} | Confidence: {confidence} | VehicleType: {v_type}", flush=True)
 
         if plate:
             camera_data = {
@@ -471,7 +471,7 @@ def analyze_camera_payload(payload_package):
                 
                 source_type = "FRONT_CAM" if camera_role == "front" else "BACK_CAM"
                 cam_label = cam_info.get("name") or ip_address
-                print(f"[CAMERA BUFFERED] {cam_label} -> {source_type} (Gate: {gate_id}, Direction: {direction})", flush=True)
+                # print(f"[CAMERA BUFFERED] {cam_label} -> {source_type} (Gate: {gate_id}, Direction: {direction})", flush=True)
                 process_and_buffer_data(source_type, camera_data)
             else:
                 if ip_address not in unregistered_cameras:
@@ -494,7 +494,7 @@ def camera_webhook_receiver():
     try:
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         content_type = request.content_type.lower() if request.content_type else ""
-        print(f"\n[CAMERA WEBHOOK EVENT RECEIVED] From IP: {client_ip} | Content-Type: {content_type}", flush=True)
+        # print(f"\n[CAMERA WEBHOOK EVENT RECEIVED] From IP: {client_ip} | Content-Type: {content_type}", flush=True)
 
         if "multipart/form-data" in content_type:
             extracted_files = {}
@@ -505,9 +505,9 @@ def camera_webhook_receiver():
                 if (filename and filename.endswith('.xml')) or ('xml' in (file_obj.content_type or '')):
                     xml_str = raw_bytes.decode('utf-8', errors='ignore')
                     extracted_files[file_key] = {"filename": filename, "type": "XML", "data": xml_str}
-                    print(f"--- [CAMERA XML PAYLOAD: {filename}] ---", flush=True)
-                    print(xml_str, flush=True)
-                    print("------------------------------------------", flush=True)
+                    # print(f"--- [CAMERA XML PAYLOAD: {filename}] ---", flush=True)
+                    # print(xml_str, flush=True)
+                    # print("------------------------------------------", flush=True)
                     try:
                         save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "last_camera_event.xml")
                         with open(save_path, "w", encoding="utf-8") as xf:
@@ -515,16 +515,16 @@ def camera_webhook_receiver():
                     except Exception:
                         pass
                 else:
-                    byte_len = len(raw_bytes)
+                    # byte_len = len(raw_bytes)
                     extracted_files[file_key] = {"filename": filename, "type": "IMAGE", "data": raw_bytes}
-                    print(f"[CAMERA ATTACHMENT: {filename or file_key}] Size: {byte_len} bytes", flush=True)
+                    # print(f"[CAMERA ATTACHMENT: {filename or file_key}] Size: {byte_len} bytes", flush=True)
 
             threading.Thread(target=analyze_camera_payload, args=({"type": "MULTIPART", "files": extracted_files},), daemon=True).start()
             return {"success": True, "message": "Multipart camera buffers streamed successfully"}, 200
 
         # Non-multipart payloads (JSON / raw XML fallback inspection)
         raw_data = request.get_data(as_text=True)
-        print(f"[CAMERA NON-MULTIPART BODY]\n{raw_data[:2000]}", flush=True)
+        # print(f"[CAMERA NON-MULTIPART BODY]\n{raw_data[:2000]}", flush=True)
         return {"success": False, "error": "Unsupported media type payload structure"}, 400
     except Exception as e:
         print(f"[CAMERA WEBHOOK ERROR] {e}", flush=True)

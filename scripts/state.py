@@ -6,6 +6,15 @@ from datetime import datetime, timedelta
 from scripts.app_context import socketio
 from scripts.config import API_BASE_URL
 
+
+def write_json_atomic(path, data):
+    """Same JSON layout as before, but written to a temp file and swapped in,
+    so a crash mid-write can't leave a truncated file behind."""
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    os.replace(tmp_path, path)
+
 # ==============================================================================
 # 🔒 ORIGINAL CORE LOCKS & RUNTIME VARIABLES (RESTORED)
 # ==============================================================================
@@ -40,27 +49,43 @@ recent_detections = []
 detections_lock = threading.Lock()
 is_hcp_connected = False
 
+# Full-size camera frames live in logs/media and are served on demand via get_detection_images.
+# Keeping them in recent_detections made the list (and its JSON file) grow to hundreds of MB.
+HEAVY_DETECTION_KEYS = ("front_plate_image", "front_vehicle_image", "back_plate_image", "back_vehicle_image")
+
+def strip_heavy_detection_images(det):
+    for key in HEAVY_DETECTION_KEYS:
+        det.pop(key, None)
+    return det
+
 def load_recent_detections():
     global recent_detections
     os.makedirs(os.path.dirname(DETECTIONS_FILE), exist_ok=True)
     if os.path.exists(DETECTIONS_FILE):
         try:
             with open(DETECTIONS_FILE, "r", encoding="utf-8") as f:
-                recent_detections = json.load(f)
+                recent_detections = [strip_heavy_detection_images(d) for d in json.load(f)]
         except Exception as e:
             print(f"Error loading recent detections: {e}", flush=True)
 
 def save_recent_detections():
     try:
         os.makedirs(os.path.dirname(DETECTIONS_FILE), exist_ok=True)
-        with open(DETECTIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(recent_detections, f, indent=4, ensure_ascii=False)
+        write_json_atomic(DETECTIONS_FILE, recent_detections)
     except Exception as e:
         print(f"Error saving recent detections: {e}", flush=True)
 
 # Load recent detections on startup
 load_recent_detections()
 
+
+def read_reconciliation_log(date_str):
+    metadata_file = os.path.join(RECON_LOG_DIR, f"reconciliation_log_{date_str}.json")
+    try:
+        with open(metadata_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
 
 def enrich_detection_images(det):
     det_copy = dict(det)
@@ -95,13 +120,17 @@ def enrich_detection_images(det):
         if det_dt.tzinfo is not None:
             det_dt = det_dt.replace(tzinfo=None)
             
+        # Detections from earlier days aren't in today's in-memory history, so read that day's log instead
+        past_history = None
+        if date_str != current_history_date:
+            past_history = read_reconciliation_log(date_str)
+
         matched_key = None
         with reconciliation_lock:
             for key, rec in list(pending_reconciliations.items()):
                 if not rec or not isinstance(rec, dict):
                     continue
-                base_plate = key.split('_')[0]
-                if base_plate == clean_plate:
+                if clean_plate in get_record_plates(key, rec):
                     first_seen_str = rec.get("first_seen")
                     if first_seen_str:
                         try:
@@ -115,12 +144,11 @@ def enrich_detection_images(det):
                             pass
             
             if not matched_key:
-                for rec in daily_reconciliation_history:
+                for rec in (past_history if past_history is not None else daily_reconciliation_history):
                     if not rec or not isinstance(rec, dict):
                         continue
                     key = rec.get("plate_key", "")
-                    base_plate = key.split('_')[0]
-                    if base_plate == clean_plate:
+                    if clean_plate in get_record_plates(key, rec):
                         first_seen_str = rec.get("first_seen")
                         if first_seen_str:
                             try:
@@ -188,6 +216,13 @@ def load_today_reconciliation_history():
             except Exception as e:
                 print(f"[BOOTLOAD WARNING] Failed parsing today's log file: {e}", flush=True)
                 daily_reconciliation_history = []
+                # Set the unreadable file aside so the next save doesn't overwrite what's left of it
+                try:
+                    corrupt_file = metadata_file.replace(".json", f".corrupt-{datetime.now().strftime('%H%M%S')}")
+                    os.replace(metadata_file, corrupt_file)
+                    print(f"[BOOTLOAD WARNING] Moved unreadable log to {corrupt_file}", flush=True)
+                except Exception as move_err:
+                    print(f"[BOOTLOAD WARNING] Could not set aside unreadable log: {move_err}", flush=True)
         else:
             daily_reconciliation_history = []
 
@@ -323,8 +358,7 @@ def get_reconciliation_history_for_date(date_query):
                 daily_reconciliation_history = cleaned
                 metadata_file = os.path.join(RECON_LOG_DIR, f"reconciliation_log_{today_str}.json")
                 try:
-                    with open(metadata_file, "w", encoding="utf-8") as f:
-                        json.dump(daily_reconciliation_history, f, indent=4, ensure_ascii=False)
+                    write_json_atomic(metadata_file, daily_reconciliation_history)
                     print(f"[REPAIR] Cleaned {original_len - len(cleaned)} leaked records from today's log.", flush=True)
                 except Exception as e:
                     print(f"Error saving cleaned today's log: {e}", flush=True)
@@ -357,8 +391,7 @@ def get_reconciliation_history_for_date(date_query):
                 cleaned = [r for r in records if r.get("first_seen", "").startswith(date_query)]
                 if len(cleaned) < len(records):
                     try:
-                        with open(metadata_file, "w", encoding="utf-8") as f:
-                            json.dump(cleaned, f, indent=4, ensure_ascii=False)
+                        write_json_atomic(metadata_file, cleaned)
                         print(f"[REPAIR] Cleaned {len(records) - len(cleaned)} leaked records from date {date_query} log.", flush=True)
                     except Exception as e:
                         print(f"Error rewriting cleaned log for date {date_query}: {e}", flush=True)
@@ -435,8 +468,7 @@ def update_ticketing_decision(plate_key, date_str, decision):
                 # Write to disk
                 metadata_file = os.path.join(RECON_LOG_DIR, f"reconciliation_log_{today_str}.json")
                 try:
-                    with open(metadata_file, "w", encoding="utf-8") as f:
-                        json.dump(daily_reconciliation_history, f, indent=4, ensure_ascii=False)
+                    write_json_atomic(metadata_file, daily_reconciliation_history)
                 except Exception as e:
                     print(f"[METADATA UPDATE ERROR] {e}", flush=True)
         else:
@@ -453,8 +485,7 @@ def update_ticketing_decision(plate_key, date_str, decision):
                         records[existing_idx]["ticketing_decision"] = decision
                         updated_record = records[existing_idx]
                         
-                        with open(metadata_file, "w", encoding="utf-8") as f:
-                            json.dump(records, f, indent=4, ensure_ascii=False)
+                        write_json_atomic(metadata_file, records)
                 except Exception as e:
                     print(f"Error updating historical reconciliation log for date {date_str}: {e}", flush=True)
                     
@@ -506,8 +537,7 @@ def save_reconciled_record_to_disk(unified_data):
             daily_reconciliation_history.append(metadata_payload)
             
         try:
-            with open(metadata_file, "w", encoding="utf-8") as f:
-                json.dump(daily_reconciliation_history, f, indent=4, ensure_ascii=False)
+            write_json_atomic(metadata_file, daily_reconciliation_history)
         except Exception as e:
             print(f"[METADATA WRITE ERROR] {e}", flush=True)
 
@@ -516,8 +546,7 @@ def save_reconciled_record_to_disk(unified_data):
         try:
             os.makedirs(media_dir, exist_ok=True)
             individual_media_file = os.path.join(media_dir, f"{plate_key}.json")
-            with open(individual_media_file, "w", encoding="utf-8") as f:
-                json.dump(media_payload, f, indent=4, ensure_ascii=False)
+            write_json_atomic(individual_media_file, media_payload)
         except Exception as e:
             print(f"[MEDIA WRITE ERROR] {e}", flush=True)
             
@@ -547,15 +576,43 @@ def levenshtein_distance(s1, s2):
         previous_row = current_row
     return previous_row[-1]
 
-def process_and_buffer_data(source_type, data):
-    ensure_today_history()
+def clean_source_plate(data):
     raw_plate = data.get("plate") or data.get("plate_no") or ""
-    incoming_plate = raw_plate.replace(" ", "").strip().upper()
-    if not incoming_plate or incoming_plate == "EMPTY":
+    return raw_plate.replace(" ", "").strip().upper()
+
+def get_record_plates(key, rec):
+    """Every plate this record answers to: its key plate plus each source's read (UNKNOWN reads excluded)."""
+    plates = {key.split('_')[0]}
+    for source_plate in [
+        (rec.get("front_camera") or {}).get("plate"),
+        (rec.get("back_camera") or {}).get("plate"),
+        (rec.get("hikcentral") or {}).get("plate"),
+        (rec.get("core_event") or {}).get("plate_no"),
+    ]:
+        if source_plate:
+            clean = source_plate.replace(" ", "").strip().upper()
+            if clean and clean not in ("UNKNOWN", "EMPTY"):
+                plates.add(clean)
+    return plates
+
+def process_and_buffer_data(source_type, data):
+    process_and_buffer_bundle([(source_type, data)])
+
+def process_and_buffer_bundle(sources):
+    """Merges one or more (source_type, data) pairs into the same reconciliation record.
+    Sources that arrive in a single message (e.g. HCP + admin disposition) must be bundled
+    here so they always share a row, even when their plate reads disagree."""
+    ensure_today_history()
+    sources = [(st, d) for st, d in sources if clean_source_plate(d) and clean_source_plate(d) != "EMPTY"]
+    if not sources:
         return
 
+    incoming_plates = {clean_source_plate(d) for _, d in sources}
+    _, data = sources[0]
+    incoming_plate = clean_source_plate(data)
+
     now = datetime.now()
-    
+
     # Parse incoming timestamp for time-window matching
     ts_str = data.get("time") or data.get("timestamp") or now.isoformat()
     incoming_dt = None
@@ -573,13 +630,10 @@ def process_and_buffer_data(source_type, data):
 
     matched_key = None
 
-    matched_key = None
-
     with reconciliation_lock:
         # 1. Search for a recent matching record in pending within 2 minutes (120 seconds) of incoming_dt
         for key, rec in list(pending_reconciliations.items()):
-            base_plate = key.split('_')[0]
-            if base_plate == incoming_plate:
+            if get_record_plates(key, rec) & incoming_plates:
                 rec_dt = None
                 first_seen_str = rec.get("first_seen")
                 if first_seen_str:
@@ -597,8 +651,7 @@ def process_and_buffer_data(source_type, data):
         if not matched_key:
             for rec in daily_reconciliation_history:
                 key = rec.get("plate_key", "")
-                base_plate = key.split('_')[0]
-                if base_plate == incoming_plate:
+                if get_record_plates(key, rec) & incoming_plates:
                     rec_dt = None
                     first_seen_str = rec.get("first_seen")
                     if first_seen_str:
@@ -647,61 +700,62 @@ def process_and_buffer_data(source_type, data):
             return "CAR"
 
         # Ingestion assignments
-        if source_type == "AVAILABLE_SPACE":
-            raw_admin_code = data.get("vehicle_type")
-            admin_vehicle_string = "CAR" if str(raw_admin_code) == "11" else ("MOTORCYCLE" if str(raw_admin_code) == "12" else "OTHERS")
+        for source_type, data in sources:
+            if source_type == "AVAILABLE_SPACE":
+                raw_admin_code = data.get("vehicle_type")
+                admin_vehicle_string = "CAR" if str(raw_admin_code) == "11" else ("MOTORCYCLE" if str(raw_admin_code) == "12" else "OTHERS")
             
-            raw_img_name = data.get("plate_image_back")
-            http_image_url = f"{API_BASE_URL}/anpr/{raw_img_name}" if raw_img_name else ""
+                raw_img_name = data.get("plate_image_back")
+                http_image_url = f"{API_BASE_URL}/anpr/{raw_img_name}" if raw_img_name else ""
 
-            record["core_event"] = {
-                "plate_no": data.get("plate_no"),
-                "vehicle_type_code": admin_vehicle_string,
-                "raw_type_received": raw_admin_code,
-                "gate_id": data.get("gate_id"),
-                "timestamp": data.get("time"),
-                "percentage": data.get("percentage"),
-                "image_url": http_image_url
-            }
+                record["core_event"] = {
+                    "plate_no": data.get("plate_no"),
+                    "vehicle_type_code": admin_vehicle_string,
+                    "raw_type_received": raw_admin_code,
+                    "gate_id": data.get("gate_id"),
+                    "timestamp": data.get("time"),
+                    "percentage": data.get("percentage"),
+                    "image_url": http_image_url
+                }
             
-        elif source_type == "FRONT_CAM":
-            record["front_camera"] = {
-                "plate": data.get("plate"),
-                "vehicle_type": normalize_camera_vehicle_type(data.get("vehicleType")),
-                "raw_type_received": data.get("vehicleType"),
-                "confidence": data.get("confidence"),
-                "timestamp": data.get("timestamp"),
-                "plate_image": data.get("plateImage"),      
-                "vehicle_image": data.get("vehicleImage")
-            }
-            if data.get("gate_id"):
-                record["gate"] = f"GATE {data.get('gate_id')}"
-            if data.get("direction"):
-                record["direction"] = data.get("direction")
+            elif source_type == "FRONT_CAM":
+                record["front_camera"] = {
+                    "plate": data.get("plate"),
+                    "vehicle_type": normalize_camera_vehicle_type(data.get("vehicleType")),
+                    "raw_type_received": data.get("vehicleType"),
+                    "confidence": data.get("confidence"),
+                    "timestamp": data.get("timestamp"),
+                    "plate_image": data.get("plateImage"),      
+                    "vehicle_image": data.get("vehicleImage")
+                }
+                if data.get("gate_id"):
+                    record["gate"] = f"GATE {data.get('gate_id')}"
+                if data.get("direction"):
+                    record["direction"] = data.get("direction")
             
-        elif source_type == "BACK_CAM":
-            record["back_camera"] = {
-                "plate": data.get("plate"),
-                "vehicle_type": normalize_camera_vehicle_type(data.get("vehicleType")),
-                "raw_type_received": data.get("vehicleType"),
-                "confidence": data.get("confidence"),
-                "timestamp": data.get("timestamp"),
-                "plate_image": data.get("plateImage"),
-                "vehicle_image": data.get("vehicleImage")
-            }
-            if data.get("gate_id"):
-                record["gate"] = f"GATE {data.get('gate_id')}"
-            if data.get("direction"):
-                record["direction"] = data.get("direction")
+            elif source_type == "BACK_CAM":
+                record["back_camera"] = {
+                    "plate": data.get("plate"),
+                    "vehicle_type": normalize_camera_vehicle_type(data.get("vehicleType")),
+                    "raw_type_received": data.get("vehicleType"),
+                    "confidence": data.get("confidence"),
+                    "timestamp": data.get("timestamp"),
+                    "plate_image": data.get("plateImage"),
+                    "vehicle_image": data.get("vehicleImage")
+                }
+                if data.get("gate_id"):
+                    record["gate"] = f"GATE {data.get('gate_id')}"
+                if data.get("direction"):
+                    record["direction"] = data.get("direction")
             
-        elif source_type == "HCP":
-            record["hikcentral"] = {
-                "plate": data.get("plate"),
-                "vehicleType": normalize_camera_vehicle_type(data.get("vehicleType")),
-                "raw_type_received": data.get("vehicleType"),
-                "gateName": data.get("gateName"),
-                "timestamp": data.get("timestamp")
-            }
+            elif source_type == "HCP":
+                record["hikcentral"] = {
+                    "plate": data.get("plate"),
+                    "vehicleType": normalize_camera_vehicle_type(data.get("vehicleType")),
+                    "raw_type_received": data.get("vehicleType"),
+                    "gateName": data.get("gateName"),
+                    "timestamp": data.get("timestamp")
+                }
 
         # =========================================================
         # 🎯 AUTOMATED DISPOSITION TRUTH TABLE CALCULATOR

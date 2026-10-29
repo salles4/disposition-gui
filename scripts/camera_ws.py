@@ -6,7 +6,7 @@ import threading
 import websocket
 from datetime import datetime
 
-from scripts.state import process_and_buffer_data
+from scripts.state import process_and_buffer_bundle
 
 from scripts.app_context import socketio
 import base64
@@ -258,19 +258,16 @@ def on_ws_message(ws, message):
                 if l_name and p_name and l_name != "-1" and p_name != "-1":
                     merged_hcp["gateName"] = f"{p_name} - {l_name}"
 
+            # HCP and admin reads arrive in this one message, so they are reconciled together onto the same row
+            reconcile_sources = []
             if merged_hcp["plate"]:
                 log_event(f"[HCP] Disposition Processed: Plate [{merged_hcp['plate']}] at {merged_hcp['gateName']}", "SYSTEM")
-                
-                # Pass data straight into the central state manager pipeline in a background thread to prevent blocking the WebSocket loop
-                threading.Thread(
-                    target=process_and_buffer_data,
-                    args=("HCP", merged_hcp),
-                    daemon=True
-                ).start()
-                
+                reconcile_sources.append(("HCP", merged_hcp))
+
             # --- PROCESS ADMIN READ FROM DISPOSITION PAYLOAD ---
             admin_payload = payload.get("admin", {})
             admin_events = admin_payload.get("events", [])
+            extra_admin_sources = []
             for admin_ev in admin_events:
                 raw_plate_no = admin_ev.get("plate_no") or admin_ev.get("plate")
                 raw_vehicle_type = admin_ev.get("vehicle_type")
@@ -298,11 +295,11 @@ def on_ws_message(ws, message):
                         "plate_image_back": admin_ev.get("backImage") or merged_hcp.get("backImage", "")
                     }
                     
-                    threading.Thread(
-                        target=process_and_buffer_data, 
-                        args=("AVAILABLE_SPACE", event_payload), 
-                        daemon=True
-                    ).start()
+                    # Pair the first admin read with the HCP read; any further admin reads get their own rows
+                    if not any(st == "AVAILABLE_SPACE" for st, _ in reconcile_sources):
+                        reconcile_sources.append(("AVAILABLE_SPACE", event_payload))
+                    else:
+                        extra_admin_sources.append(("AVAILABLE_SPACE", event_payload))
 
                     v_type = sanitize_vehicle_type(raw_vehicle_type).upper()
                     
@@ -331,7 +328,7 @@ def on_ws_message(ws, message):
                     
                     def handle_recent_admin_det(det_obj):
                         import scripts.state as state
-                        det_obj = state.enrich_detection_images(det_obj)
+                        # Images are fetched on demand by the dashboard (get_detection_images), so don't embed them here
                         with state.detections_lock:
                             clean_p = det_obj["plate_no"].replace(" ", "").strip().upper()
                             state.recent_detections = [
@@ -350,7 +347,11 @@ def on_ws_message(ws, message):
 
                     if GLOBAL_CONFIG.get("detection_mode") == "camera":
                         threading.Thread(target=process_camera_vehicle, args=(plate_no, raw_vehicle_type, gate_id), daemon=True).start()
-                
+
+            # Pass data straight into the central state manager pipeline in a background thread to prevent blocking the WebSocket loop
+            for bundle in ([reconcile_sources] if reconcile_sources else []) + [[src] for src in extra_admin_sources]:
+                threading.Thread(target=process_and_buffer_bundle, args=(bundle,), daemon=True).start()
+
     except Exception as e:
         log_event(f"Error handling WebSocket message: {e}", "ERROR")
 
