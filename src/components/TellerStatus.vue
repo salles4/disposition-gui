@@ -7,7 +7,7 @@
       </h2>
       <div class="connection-indicator" :class="{ online: isOnline }">
         <span class="dot"></span>
-        <span class="text">{{ isOnline ? 'ONLINE (Port 5010)' : 'OFFLINE' }}</span>
+        <span class="text">{{ isOnline ? `ONLINE (Port ${tellerPort || 5010})` : 'OFFLINE' }}</span>
       </div>
     </div>
 
@@ -169,13 +169,19 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
+const props = defineProps({
+  // From the dashboard's Server Connection settings (servers.teller_port)
+  tellerPort: { type: [Number, String], default: null }
+})
+const tellerBase = computed(() => `http://${window.location.hostname}:${props.tellerPort || 5010}`)
+
 const isOnline = ref(false)
 const statusData = ref({})
 let pollInterval = null
 
 const fetchStatus = async () => {
   try {
-    const res = await fetch(`http://${window.location.hostname}:5010/get-status`)
+    const res = await fetch(`${tellerBase.value}/get-status`)
     if (res.ok) {
       statusData.value = await res.json()
       isOnline.value = true
@@ -307,7 +313,7 @@ const activeAreaPath = computed(() => {
 })
 
 const downloadLogs = () => {
-  window.open(`http://${window.location.hostname}:5010/download-ram-logs`, '_blank')
+  window.open(`${tellerBase.value}/download-ram-logs`, '_blank')
 }
 
 onMounted(() => {

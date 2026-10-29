@@ -32,7 +32,7 @@ WAIT_OPTIONS = [15] # Seconds between scheduled payments
 
 def get_cooldown():
     try:
-        config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+        config_file = CONFIG_FILE  # data/config.json, shared with the engine
         if os.path.exists(config_file):
             with open(config_file, "r") as f:
                 config = json.load(f)
@@ -42,7 +42,7 @@ def get_cooldown():
 
 def get_process_delay():
     try:
-        config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+        config_file = CONFIG_FILE  # data/config.json, shared with the engine
         if os.path.exists(config_file):
             with open(config_file, "r") as f:
                 config = json.load(f)
@@ -52,7 +52,7 @@ def get_process_delay():
 
 def is_real_device_payment_enabled():
     try:
-        config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+        config_file = CONFIG_FILE  # data/config.json, shared with the engine
         if os.path.exists(config_file):
             with open(config_file, "r") as f:
                 config = json.load(f)
@@ -63,10 +63,10 @@ def is_real_device_payment_enabled():
 # Import token dynamically from config.py to ensure it is always valid and synchronized
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from scripts.config import TOKEN, API_BASE_URL
+from scripts.config import TOKEN, API_BASE_URL, CONFIG_FILE, get_servers
 from scripts.utils import format_plate, is_token_rejection
 
-# UNIFIED BASE HOST pointing to the API_BASE_URL config
+# UNIFIED BASE HOST pointing to the API_BASE_URL config (swapped live via /update-api-url when changed on the dashboard)
 BASE_HOST = API_BASE_URL
 
 application_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -141,7 +141,7 @@ api_session.headers.update(HEADERS)
 # 🔑 API TOKEN WATCH: report rejections to the main backend so its token prompt shows
 api_token_rejected = False
 _engine_host = os.environ.get("HOST", "127.0.0.1")
-ENGINE_URL = f"http://{'127.0.0.1' if _engine_host in ('', '0.0.0.0') else _engine_host}:{os.environ.get('PORT', '5015')}"
+ENGINE_URL = f"http://{'127.0.0.1' if _engine_host in ('', '0.0.0.0') else _engine_host}:{get_servers()['app_port']}"
 
 def set_api_token_rejected(rejected, detail=""):
     global api_token_rejected
@@ -555,6 +555,16 @@ def update_token():
     api_session.headers["Authorization"] = f"Bearer {token}"
     set_api_token_rejected(False)
     record("API token updated from admin UI.", "INFO")
+    return jsonify({"status": "updated"}), 200
+
+@app.route('/update-api-url', methods=['POST'])
+def update_api_url():
+    global BASE_HOST
+    url = str((request.json or {}).get("url", "")).strip().rstrip("/")
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"status": "invalid"}), 400
+    BASE_HOST = url
+    record(f"Core API address updated from admin UI: {url}", "INFO")
     return jsonify({"status": "updated"}), 200
 
 @app.route('/get-queue', methods=['GET'])
@@ -1018,4 +1028,4 @@ def manage_scheduler():
 if __name__ == "__main__":
     load_ram_history()
     socketio.start_background_task(manage_scheduler)
-    socketio.run(app, host='0.0.0.0', port=5010, debug=False, use_reloader=False)
+    socketio.run(app, host='0.0.0.0', port=int(get_servers()['teller_port']), debug=False, use_reloader=False)

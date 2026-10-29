@@ -39,5 +39,7 @@ __screenshots__/
 *.timestamp-*-*.mjs
 
 .env
+# Runtime data, including data/config.json (all dashboard settings: camera mapping, server addresses).
+# Never commit it, so a git pull can't replace a site's settings.
 data/*
 scripts/__pycache__/*

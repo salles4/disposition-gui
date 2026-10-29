@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime, timedelta
 from scripts.app_context import socketio
-from scripts.config import API_BASE_URL
+import scripts.config as config
 from scripts.utils import ADMIN_CAR_CODES, ADMIN_MOTORCYCLE_CODES
 
 
@@ -708,7 +708,7 @@ def process_and_buffer_bundle(sources):
                 admin_vehicle_string = "CAR" if admin_code in ADMIN_CAR_CODES else ("MOTORCYCLE" if admin_code in ADMIN_MOTORCYCLE_CODES else "OTHERS")
             
                 raw_img_name = data.get("plate_image_back")
-                http_image_url = f"{API_BASE_URL}/anpr/{raw_img_name}" if raw_img_name else ""
+                http_image_url = f"{config.API_BASE_URL}/anpr/{raw_img_name}" if raw_img_name else ""
 
                 record["core_event"] = {
                     "plate_no": data.get("plate_no"),

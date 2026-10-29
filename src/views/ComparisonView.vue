@@ -532,14 +532,15 @@ const displayPlate = (key) => {
 
 const socket = io(import.meta.env.DEV ? `http://${window.location.hostname}:${import.meta.env.VITE_WS_PORT || '5015'}` : window.location.origin)
 
-const wsPort = computed(() => import.meta.env.VITE_WS_PORT || '5015')
+// Server addresses come from the backend config (servers section, editable on the admin dashboard)
+const servers = ref({})
+const wsPort = computed(() => servers.value.app_port || import.meta.env.VITE_WS_PORT || '5015')
 const apiPort = computed(() => {
-  const url = import.meta.env.VITE_API_BASE_URL || 'http://103.93.223.103:9075'
   try {
-    const parsed = new URL(url)
-    return parsed.port || '80'
-  } catch (e) {
-    return '9075'
+    const parsed = new URL(servers.value.api_base_url)
+    return parsed.port || (parsed.protocol === 'https:' ? '443' : '80')
+  } catch {
+    return '—'
   }
 })
 const comparisonList = ref([])
@@ -1352,6 +1353,7 @@ onMounted(() => {
   socket.on('config_sync', (cfg) => {
     splitExitLayout.value = cfg.split_exit_layout !== false
     exitRowsRightAligned.value = cfg.exit_rows_right_aligned !== false
+    servers.value = cfg.servers || {}
   })
 
   socket.on('all_time_reconciliation_stats_response', (statsData) => {

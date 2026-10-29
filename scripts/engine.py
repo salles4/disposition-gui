@@ -19,7 +19,7 @@ from scripts.state import (
 )
 from scripts.logging_reporter import log_event
 from scripts.payment_handler import sync_and_process_parked_vehicles
-from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token, update_api_token, note_api_response, set_api_auth_failed
+from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token, update_api_token, note_api_response, set_api_auth_failed, update_api_base_url
 from scripts.utils import format_plate
 from scripts.api_metrics import set_broadcast_callback, set_response_hook, get_all_metrics, reset_metrics
 
@@ -295,6 +295,67 @@ def handle_update_config(data):
     emit_unregistered_cameras()
     log_event(f"Config Updated.", "ADMIN")
 
+def _parse_port(value):
+    try:
+        port = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return port if 1 <= port <= 65535 else None
+
+@socketio.on('admin_update_servers')
+def handle_update_servers(data):
+    """Server Connection card: core API IP/port (applied live) plus this app's and the teller's ports (need a restart)."""
+    data = data or {}
+    host = str(data.get('api_host', '')).strip()
+    scheme = 'http'
+    if '://' in host:
+        scheme, host = host.split('://', 1)
+        scheme = scheme.lower()
+    host = host.strip().strip('/')
+    api_port = _parse_port(data.get('api_port'))
+    app_port = _parse_port(data.get('app_port'))
+    teller_port = _parse_port(data.get('teller_port'))
+
+    errors = []
+    if not host or any(c in host for c in ' /:'):
+        errors.append("Enter the API server IP or hostname only (the port goes in its own box).")
+    if scheme not in ('http', 'https'):
+        errors.append("The API address must start with http:// or https://.")
+    for label, port in (("API port", api_port), ("App port", app_port), ("Teller port", teller_port)):
+        if port is None:
+            errors.append(f"{label} must be a number from 1 to 65535.")
+    if app_port and app_port == teller_port:
+        errors.append("App port and teller port can't be the same.")
+    if errors:
+        socketio.emit('servers_update_result', {'ok': False, 'message': ' '.join(errors)}, to=request.sid)
+        return
+
+    servers = GLOBAL_CONFIG['servers']
+    new_api_url = f"{scheme}://{host}:{api_port}"
+    api_changed = new_api_url != servers['api_base_url'].rstrip('/')
+    teller_changed = teller_port != int(servers['teller_port'])
+    servers.update({'api_base_url': new_api_url, 'app_port': app_port, 'teller_port': teller_port})
+    save_config(log_event)
+
+    notes = []
+    if api_changed:
+        teller_warning = update_api_base_url()
+        notes.append(f"Now using API server {new_api_url}; the backend stream is reconnecting.")
+        if teller_warning:
+            notes.append(teller_warning)
+    if app_port != RUNNING_APP_PORT:
+        notes.append(f"Restart the app to move it to port {app_port} (it's running on {RUNNING_APP_PORT}).")
+    if teller_changed:
+        notes.append(f"Restart the teller service so it listens on port {teller_port}.")
+
+    socketio.emit('config_sync', GLOBAL_CONFIG, to='admin_room')
+    socketio.emit('servers_update_result', {
+        'ok': True,
+        'restart_needed': app_port != RUNNING_APP_PORT or teller_changed,
+        'message': ' '.join(notes) or "Saved. Nothing changed."
+    }, to=request.sid)
+    log_event(f"Server settings updated: API {new_api_url}, app port {app_port}, teller port {teller_port}.", "ADMIN")
+
 @socketio.on('request_token_status')
 def handle_request_token_status():
     emit_token_status(to=request.sid)
@@ -549,6 +610,8 @@ def serve_vue_routes(path):
     return send_from_directory(dist_path, 'index.html')
 
 load_config(log_event)
+# Port this process listens on; a different saved app_port only takes effect after a restart
+RUNNING_APP_PORT = int(GLOBAL_CONFIG['servers']['app_port'])
 
 if __name__ == "__main__":
     print("\n" + "="*50 + "\nPIPELINE TUNNEL ENGINE RUNNING\n" + "="*50 + "\n")
@@ -557,6 +620,5 @@ if __name__ == "__main__":
     threading.Thread(target=websocket_listener, daemon=True).start()
     
     # 🟢 FIX: Ensure use_reloader=False is set to prevent duplicate thread generation
-    port = int(os.environ.get("PORT", 5015))
     host = os.environ.get("HOST", "0.0.0.0")
-    socketio.run(app, host=host, port=port, debug=False, use_reloader=False)
+    socketio.run(app, host=host, port=RUNNING_APP_PORT, debug=False, use_reloader=False)

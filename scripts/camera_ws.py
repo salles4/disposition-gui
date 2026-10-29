@@ -11,7 +11,7 @@ from scripts.state import process_and_buffer_bundle
 from scripts.app_context import socketio
 import base64
 import scripts.config as config
-from scripts.config import API_BASE_URL, TERMINAL_ID, HEADERS, GLOBAL_CONFIG, EXIT_GATES
+from scripts.config import TERMINAL_ID, HEADERS, GLOBAL_CONFIG, EXIT_GATES
 from scripts.state import sim_stats, queue_lock, matching_lock, last_displayed_entry, last_displayed_exit
 from scripts.utils import format_plate, clean_gate_id, levenshtein_distance, get_random_gate, sanitize_vehicle_type, is_token_rejection
 
@@ -31,7 +31,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
             log_event(f"[CAMERA] Real device payment enabled. Sending vehicle [{plate}] to Teller Service...", "PAY")
             entry_time_str = None
             try:
-                bill_res = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                bill_res = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                 if bill_res.status_code == 200 and bill_res.json().get("success"):
                     entry_time_str = bill_res.json().get("data", {}).get("time_in")
             except Exception as e:
@@ -41,7 +41,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
                 entry_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
             try:
-                add_res = requests.post("http://localhost:5010/add-to-queue", json={"plate_no": plate, "time_in": entry_time_str}, timeout=5)
+                add_res = requests.post(config.teller_url("/add-to-queue"), json={"plate_no": plate, "time_in": entry_time_str}, timeout=5)
                 if add_res.status_code == 200:
                     log_event(f"[CAMERA] Vehicle [{plate}] added to Teller Service queue.", "PAY")
                 else:
@@ -55,7 +55,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
             while (time.time() - start_poll) < 180:
                 time.sleep(3)
                 try:
-                    bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                    bill_chk = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                     if bill_chk.status_code != 200:
                         err_text = bill_chk.text.lower()
                         if "already paid" in err_text or "payment successful" in err_text or "enter park" in err_text or "not inside" in err_text or "exited" in err_text:
@@ -91,7 +91,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
                 assigned_exit = EXIT_GATES[sim_stats.get("exited", 0) % len(EXIT_GATES)]
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 try:
-                    exit_res = requests.post(f"{API_BASE_URL}/api/lpr", json={"gate_id": assigned_exit, "plate_no": plate, "vehicle_type": v_type, "created_at": now_str, "timestamp": now_str, "time_out": now_str}, headers=HEADERS, timeout=10)
+                    exit_res = requests.post(f"{config.API_BASE_URL}/api/lpr", json={"gate_id": assigned_exit, "plate_no": plate, "vehicle_type": v_type, "created_at": now_str, "timestamp": now_str, "time_out": now_str}, headers=HEADERS, timeout=10)
                 except Exception:
                     pass
                 
@@ -117,7 +117,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
         
         for attempt in range(3):
             try:
-                bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+                bill = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
                 bill_json = bill.json()
                 if bill_json.get("success"):
                     bill_data = bill_json.get("data")
@@ -137,7 +137,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
         pay_err = ""
         for attempt in range(3):
             try:
-                pay = requests.post(f"{API_BASE_URL}/api/payment/cash", json={"amount_paid": total, "licence_plate_no": plate, "reference_no": ref_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+                pay = requests.post(f"{config.API_BASE_URL}/api/payment/cash", json={"amount_paid": total, "licence_plate_no": plate, "reference_no": ref_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
                 try:
                     pay_json = pay.json()
                 except Exception:
@@ -165,7 +165,7 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
             assigned_exit = EXIT_GATES[sim_stats.get("exited", 0) % len(EXIT_GATES)]
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             try:
-                requests.post(f"{API_BASE_URL}/api/lpr", json={"gate_id": assigned_exit, "plate_no": plate, "vehicle_type": v_type, "created_at": now_str, "timestamp": now_str, "time_out": now_str}, headers=HEADERS, timeout=10)
+                requests.post(f"{config.API_BASE_URL}/api/lpr", json={"gate_id": assigned_exit, "plate_no": plate, "vehicle_type": v_type, "created_at": now_str, "timestamp": now_str, "time_out": now_str}, headers=HEADERS, timeout=10)
             except Exception: pass
             
             with matching_lock:
@@ -485,10 +485,29 @@ def update_api_token(token):
 
     # The teller service is a separate process with its own session headers
     try:
-        requests.post("http://localhost:5010/update-token", json={"token": token}, timeout=3)
+        requests.post(config.teller_url("/update-token"), json={"token": token}, timeout=3)
     except Exception:
         return True, "Token updated. Teller service not reachable; it will load the new token on restart."
     return True, "Token updated."
+
+def update_api_base_url():
+    """Apply the core API address saved in config (servers.api_base_url) without a restart.
+    REST calls read config.API_BASE_URL per request; the backend websocket and the teller service need a nudge.
+    Returns a warning string if the teller service couldn't be told, else None."""
+    config.apply_server_settings()
+
+    # Closing the socket drops run_forever(); the listener loop reconnects to the new address
+    if _current_ws:
+        try:
+            _current_ws.close()
+        except Exception:
+            pass
+
+    try:
+        requests.post(config.teller_url("/update-api-url"), json={"url": config.API_BASE_URL}, timeout=3)
+    except Exception:
+        return "Teller service not reachable; it will use the new address when it restarts."
+    return None
 
 def websocket_listener():
     from scripts.logging_reporter import log_event
@@ -496,7 +515,7 @@ def websocket_listener():
     while True:
         try:
             # Explicitly log that a connection attempt is starting
-            ws_url = API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
+            ws_url = config.API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
             print(f"[WS CONNECT] Attempting handshake with stream at {ws_url}...", flush=True)
             _ws_opened = False
 

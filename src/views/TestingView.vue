@@ -599,7 +599,8 @@ import TokenPrompt from '@/components/TokenPrompt.vue'
 // Socket.io initialization
 const socket = io(import.meta.env.DEV ? `http://${window.location.hostname}:${import.meta.env.VITE_WS_PORT || '5015'}` : window.location.origin)
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://103.93.223.103:9075'
+// Core API address from the backend config (servers.api_base_url, editable on the admin dashboard)
+const apiBaseUrl = ref(import.meta.env.VITE_API_BASE_URL || '')
 
 // State variables
 const recentDetections = ref([])
@@ -729,14 +730,14 @@ const getCurrentImageUrl = () => {
     }
     const img = activeDet.value.plate_image_front || activeDet.value.front_plate_image
     if (!img || img === 'front_image_available' || img === 'back_image_available') return ''
-    return img.startsWith('data:') ? img : `${apiBaseUrl}/anpr/${img}`
+    return img.startsWith('data:') ? img : `${apiBaseUrl.value}/anpr/${img}`
   } else {
     if (activeImageType.value === 'vehicle' && activeDet.value.back_vehicle_image) {
       return activeDet.value.back_vehicle_image
     }
     const img = activeDet.value.plate_image_back || activeDet.value.back_plate_image
     if (!img || img === 'front_image_available' || img === 'back_image_available') return ''
-    return img.startsWith('data:') ? img : `${apiBaseUrl}/anpr/${img}`
+    return img.startsWith('data:') ? img : `${apiBaseUrl.value}/anpr/${img}`
   }
 }
 
@@ -746,12 +747,12 @@ const getEditModalImageUrl = (type) => {
     if (editModalRecord.value.front_vehicle_image) return editModalRecord.value.front_vehicle_image
     const img = editModalRecord.value.img_front
     if (!img || img === 'front_image_available' || img === 'back_image_available') return ''
-    return img.startsWith('data:') ? img : `${apiBaseUrl}/anpr/${img}`
+    return img.startsWith('data:') ? img : `${apiBaseUrl.value}/anpr/${img}`
   } else {
     if (editModalRecord.value.back_vehicle_image) return editModalRecord.value.back_vehicle_image
     const img = editModalRecord.value.img_back
     if (!img || img === 'front_image_available' || img === 'back_image_available') return ''
-    return img.startsWith('data:') ? img : `${apiBaseUrl}/anpr/${img}`
+    return img.startsWith('data:') ? img : `${apiBaseUrl.value}/anpr/${img}`
   }
 }
 
@@ -1050,6 +1051,10 @@ onMounted(() => {
   }
 
   // Receive detections list
+  socket.on('config_sync', (cfg) => {
+    if (cfg.servers && cfg.servers.api_base_url) apiBaseUrl.value = cfg.servers.api_base_url.replace(/\/+$/, '')
+  })
+
   socket.on('recent_detections', (list) => {
     recentDetections.value = list
     // Set active vehicle if not already selected
@@ -1121,6 +1126,7 @@ onUnmounted(() => {
   socket.off('connect')
   socket.off('disconnect')
   socket.off('recent_detections')
+  socket.off('config_sync')
   socket.off('new_camera_detection')
   socket.off('manual_verification_history')
   socket.off('manual_verification_new')

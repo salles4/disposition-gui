@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 sync_lock = threading.Lock()
 
 from scripts.app_context import socketio
-from scripts.config import API_BASE_URL, TERMINAL_ID, HEADERS, ADMIN_HEADERS, GLOBAL_CONFIG, EXIT_GATES
+import scripts.config as config
+from scripts.config import TERMINAL_ID, HEADERS, ADMIN_HEADERS, GLOBAL_CONFIG, EXIT_GATES
 from scripts.state import sim_stats, queue_lock
 from scripts.logging_reporter import log_event
 from scripts.utils import format_plate, get_random_gate
@@ -18,7 +19,7 @@ def execute_payment(plate_no, v_type):
         log_event(f"[{plate_no}] Real device payment enabled. Sending to Teller Service...", "PAY")
         entry_time_str = None
         try:
-            bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+            bill = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
             bill_json = bill.json()
             if bill_json.get("success"):
                 bill_data = bill_json.get("data")
@@ -32,7 +33,7 @@ def execute_payment(plate_no, v_type):
 
         try:
             add_res = requests.post(
-                "http://localhost:5010/add-to-queue",
+                config.teller_url("/add-to-queue"),
                 json={"plate_no": plate_no, "time_in": entry_time_str},
                 timeout=5
             )
@@ -49,7 +50,7 @@ def execute_payment(plate_no, v_type):
         while (time.time() - start_poll) < 180:
             time.sleep(3)
             try:
-                bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                bill_chk = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                 if bill_chk.status_code != 200:
                     err_text = bill_chk.text.lower()
                     if "already paid" in err_text or "payment successful" in err_text or "enter park" in err_text:
@@ -91,7 +92,7 @@ def execute_payment(plate_no, v_type):
     # CONDITION 3: Handle Production Environment (Live API Mode Enabled)
     log_event(f"Executing live production API sequence for [{plate_no}]...", "SYSTEM")
     try:
-        bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+        bill = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
         try:
             bill_json = bill.json()
         except Exception:
@@ -109,7 +110,7 @@ def execute_payment(plate_no, v_type):
             
         total = float(bill_data.get("total_amount", "0"))
         
-        pay = requests.post(f"{API_BASE_URL}/api/payment/cash", json={"amount_paid": total, "licence_plate_no": plate_no, "reference_no": ref_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+        pay = requests.post(f"{config.API_BASE_URL}/api/payment/cash", json={"amount_paid": total, "licence_plate_no": plate_no, "reference_no": ref_no, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
         
         try:
             pay_json = pay.json()
@@ -133,7 +134,7 @@ def sync_and_process_parked_vehicles():
         return
     try:
         # 1. Fetch active (unpaid) vehicles
-        res_active = requests.get(f"{API_BASE_URL}/api/parked/active", headers=ADMIN_HEADERS, timeout=10)
+        res_active = requests.get(f"{config.API_BASE_URL}/api/parked/active", headers=ADMIN_HEADERS, timeout=10)
         active_list = []
         if res_active.status_code == 200 and res_active.json().get("success"):
             active_list = res_active.json().get("data", [])
@@ -142,7 +143,7 @@ def sync_and_process_parked_vehicles():
             log_event(f"Failed to fetch active parked list: {res_active.text}", "ERROR")
             
         # 2. Fetch cleared (paid) vehicles
-        res_cleared = requests.get(f"{API_BASE_URL}/api/parked/cleared", headers=ADMIN_HEADERS, timeout=10)
+        res_cleared = requests.get(f"{config.API_BASE_URL}/api/parked/cleared", headers=ADMIN_HEADERS, timeout=10)
         cleared_list = []
         if res_cleared.status_code == 200 and res_cleared.json().get("success"):
             cleared_list = res_cleared.json().get("data", [])
@@ -151,7 +152,7 @@ def sync_and_process_parked_vehicles():
             log_event(f"Failed to fetch cleared parked list: {res_cleared.text}", "ERROR")
 
         # 2b. Fetch flagged parked vehicles (over 24 hours)
-        res_flagged = requests.get(f"{API_BASE_URL}/api/parked/flagged", headers=ADMIN_HEADERS, timeout=10)
+        res_flagged = requests.get(f"{config.API_BASE_URL}/api/parked/flagged", headers=ADMIN_HEADERS, timeout=10)
         flagged_list = []
         if res_flagged.status_code == 200 and res_flagged.json().get("success"):
             flagged_list = res_flagged.json().get("data", [])
@@ -175,7 +176,7 @@ def sync_and_process_parked_vehicles():
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             try:
                 exit_res = requests.post(
-                    f"{API_BASE_URL}/api/lpr",
+                    f"{config.API_BASE_URL}/api/lpr",
                     json={
                         "gate_id": assigned_exit,
                         "plate_no": plate,
@@ -221,7 +222,7 @@ def sync_and_process_parked_vehicles():
             if GLOBAL_CONFIG.get("real_device_payment"):
                 entry_time_str = None
                 try:
-                    bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+                    bill = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
                     bill_json = bill.json()
                     if bill_json.get("success"):
                         bill_data = bill_json.get("data")
@@ -235,7 +236,7 @@ def sync_and_process_parked_vehicles():
 
                 try:
                     add_res = requests.post(
-                        "http://localhost:5010/add-to-queue",
+                        config.teller_url("/add-to-queue"),
                         json={"plate_no": plate, "time_in": entry_time_str},
                         timeout=5
                     )
@@ -252,7 +253,7 @@ def sync_and_process_parked_vehicles():
                 while (time.time() - start_poll) < 180:
                     time.sleep(3)
                     try:
-                        bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                        bill_chk = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                         if bill_chk.status_code != 200:
                             err_text = bill_chk.text.lower()
                             if "already paid" in err_text or "payment successful" in err_text or "enter park" in err_text:
@@ -295,7 +296,7 @@ def sync_and_process_parked_vehicles():
                     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     try:
                         exit_res = requests.post(
-                            f"{API_BASE_URL}/api/lpr",
+                            f"{config.API_BASE_URL}/api/lpr",
                             json={
                                 "gate_id": assigned_exit,
                                 "plate_no": plate,
@@ -332,7 +333,7 @@ def sync_and_process_parked_vehicles():
 
             # --- LIVE PRODUCTION API HANDLING ---
             log_event(f"[SYNC] Fetching bill details for active vehicle [{plate}]...", "SYSTEM")
-            bill = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
+            bill = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=10)
             try:
                 bill_json = bill.json()
             except Exception:
@@ -359,7 +360,7 @@ def sync_and_process_parked_vehicles():
                 "reference_no": ref_no,
                 "terminal": TERMINAL_ID
             }
-            pay = requests.post(f"{API_BASE_URL}/api/payment/cash", json=pay_payload, headers=HEADERS, timeout=10)
+            pay = requests.post(f"{config.API_BASE_URL}/api/payment/cash", json=pay_payload, headers=HEADERS, timeout=10)
             pay_json = pay.json()
             
             if pay_json.get("success"):
@@ -378,7 +379,7 @@ def sync_and_process_parked_vehicles():
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 try:
                     exit_res = requests.post(
-                        f"{API_BASE_URL}/api/lpr",
+                        f"{config.API_BASE_URL}/api/lpr",
                         json={
                             "gate_id": assigned_exit,
                             "plate_no": plate,
@@ -423,7 +424,7 @@ def sync_and_process_parked_vehicles():
 def exit_all_paid_vehicles():
     try:
         # 1. Fetch cleared (paid) vehicles
-        res_cleared = requests.get(f"{API_BASE_URL}/api/parked/cleared", headers=ADMIN_HEADERS, timeout=10)
+        res_cleared = requests.get(f"{config.API_BASE_URL}/api/parked/cleared", headers=ADMIN_HEADERS, timeout=10)
         cleared_list = []
         if res_cleared.status_code == 200 and res_cleared.json().get("success"):
             cleared_list = res_cleared.json().get("data", [])
@@ -432,7 +433,7 @@ def exit_all_paid_vehicles():
             log_event(f"Failed to fetch cleared parked list: {res_cleared.text}", "ERROR")
 
         # 2. Fetch flagged parked vehicles (over 24 hours)
-        res_flagged = requests.get(f"{API_BASE_URL}/api/parked/flagged", headers=ADMIN_HEADERS, timeout=10)
+        res_flagged = requests.get(f"{config.API_BASE_URL}/api/parked/flagged", headers=ADMIN_HEADERS, timeout=10)
         flagged_list = []
         if res_flagged.status_code == 200 and res_flagged.json().get("success"):
             flagged_list = res_flagged.json().get("data", [])
@@ -468,7 +469,7 @@ def exit_all_paid_vehicles():
 
             if not is_paid:
                 try:
-                    bill_chk = requests.post(f"{API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": fmt_plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
+                    bill_chk = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no", json={"licence_plate_no": fmt_plate, "terminal": TERMINAL_ID}, headers=HEADERS, timeout=5)
                     err_text = bill_chk.text.lower()
                     if bill_chk.status_code != 200:
                         if any(k in err_text for k in ["already paid", "payment successful", "enter park", "exited", "not inside", "no transaction"]):
@@ -505,7 +506,7 @@ def exit_all_paid_vehicles():
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             try:
                 exit_res = requests.post(
-                    f"{API_BASE_URL}/api/lpr",
+                    f"{config.API_BASE_URL}/api/lpr",
                     json={
                         "gate_id": assigned_exit,
                         "plate_no": plate,

@@ -25,16 +25,21 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
-
-const wsPort = import.meta.env.VITE_WS_PORT || '5015'
+import { ref, watch, nextTick, computed } from 'vue'
 
 const props = defineProps({
   logs: {
     type: Array,
     required: true
+  },
+  // From the dashboard's Server Connection settings (servers.app_port)
+  appPort: {
+    type: [Number, String],
+    default: null
   }
 })
+
+const wsPort = computed(() => props.appPort || import.meta.env.VITE_WS_PORT || '5015')
 
 const emit = defineEmits(['clear-logs'])
 

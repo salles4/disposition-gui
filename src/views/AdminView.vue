@@ -20,11 +20,12 @@
     <div class="split-layout">
       <!-- Left Column: Console & Teller -->
       <div class="console-column">
-        <LogConsole 
-          :logs="logs" 
-          @clear-logs="clearLogs" 
+        <LogConsole
+          :logs="logs"
+          :app-port="servers.app_port"
+          @clear-logs="clearLogs"
         />
-        <TellerStatus />
+        <TellerStatus :teller-port="servers.teller_port" />
       </div>
 
       <!-- Right Column: Settings & Live Actions -->
@@ -38,6 +39,8 @@
           @toggle-exit-rows-right-aligned="toggleExitRowsRightAligned"
           @save-timers="saveTimers"
         />
+
+        <ServerSettings :socket="socket" :servers="servers" />
 
         <!-- LPR Dynamic Camera Mapping Configuration Card -->
         <div class="live-actions-card camera-mapping-card" style="margin-top: 0px;">
@@ -232,17 +235,19 @@ import TrackerGrid from '@/components/TrackerGrid.vue'
 import LogConsole from '@/components/LogConsole.vue'
 import TellerStatus from '@/components/TellerStatus.vue'
 import SimulationSettings from '@/components/SimulationSettings.vue'
+import ServerSettings from '@/components/ServerSettings.vue'
 import ApiMetrics from '@/components/ApiMetrics.vue'
 
 const socket = io(import.meta.env.DEV ? `http://${window.location.hostname}:${import.meta.env.VITE_WS_PORT || '5015'}` : window.location.origin)
 
+// Server addresses come from the backend config (servers section, editable in the Server Connection card)
+const servers = ref({})
 const apiPort = computed(() => {
-  const url = import.meta.env.VITE_API_BASE_URL || 'http://103.93.223.103:9075'
   try {
-    const parsed = new URL(url)
-    return parsed.port || '80'
-  } catch (e) {
-    return '9075'
+    const parsed = new URL(servers.value.api_base_url)
+    return parsed.port || (parsed.protocol === 'https:' ? '443' : '80')
+  } catch {
+    return '—'
   }
 })
 
@@ -458,6 +463,7 @@ onMounted(() => {
     config.teller_cooldown_seconds = newConfig.teller_cooldown_seconds || 3
     config.split_exit_layout = newConfig.split_exit_layout !== false
     config.exit_rows_right_aligned = newConfig.exit_rows_right_aligned !== false
+    servers.value = newConfig.servers || {}
     cameraMapping.value = newConfig.camera_mapping || {}
   })
 
