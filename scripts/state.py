@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta
 from scripts.app_context import socketio
 from scripts.config import API_BASE_URL
+from scripts.utils import ADMIN_CAR_CODES, ADMIN_MOTORCYCLE_CODES
 
 
 def write_json_atomic(path, data):
@@ -703,7 +704,8 @@ def process_and_buffer_bundle(sources):
         for source_type, data in sources:
             if source_type == "AVAILABLE_SPACE":
                 raw_admin_code = data.get("vehicle_type")
-                admin_vehicle_string = "CAR" if str(raw_admin_code) == "11" else ("MOTORCYCLE" if str(raw_admin_code) == "12" else "OTHERS")
+                admin_code = str(raw_admin_code).strip()
+                admin_vehicle_string = "CAR" if admin_code in ADMIN_CAR_CODES else ("MOTORCYCLE" if admin_code in ADMIN_MOTORCYCLE_CODES else "OTHERS")
             
                 raw_img_name = data.get("plate_image_back")
                 http_image_url = f"{API_BASE_URL}/anpr/{raw_img_name}" if raw_img_name else ""

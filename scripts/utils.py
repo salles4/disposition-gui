@@ -10,13 +10,17 @@ def is_token_rejection(status_code, body_text):
         return any(k in text for k in ["token", "jwt", "expired", "revoked", "unauthorized"])
     return False
 
+# Admin vehicle type codes: 1/2 is the current format, 11/12 kept for older events
+ADMIN_CAR_CODES = {"1", "11"}
+ADMIN_MOTORCYCLE_CODES = {"2", "12"}
+
 def sanitize_vehicle_type(raw_type):
     if not raw_type:
         return "car"
     val = str(raw_type).lower().strip()
-    if val == "12" or "motor" in val: 
+    if val in ADMIN_MOTORCYCLE_CODES or "motor" in val:
         return "motorcycle"
-    if val == "11" or "car" in val: 
+    if val in ADMIN_CAR_CODES or "car" in val:
         return "car"
     return "car"
 
