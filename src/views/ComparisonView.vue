@@ -1,11 +1,21 @@
 <template>
-  <div class="admin-container" ref="pageScroller" @scroll.passive="updateBackToTop">
+  <div :class="['admin-container', { light: isLightMode }]" ref="pageScroller" @scroll.passive="updateBackToTop">
     <div class="admin-header-row">
-      <h1 style="color: #17a2b8; display: flex; align-items: center; gap: 10px;">
+      <h1 class="page-title" style="color: #17a2b8; display: flex; align-items: center; gap: 10px;">
         <span class="mdi mdi-table-eye"></span>
         Disposition Module (Conference Room)
       </h1>
       <div class="launcher-actions">
+        <button
+          type="button"
+          class="btn btn-launcher btn-theme-toggle"
+          :aria-pressed="isLightMode"
+          :title="isLightMode ? 'Switch to dark mode' : 'Switch to light mode'"
+          @click="toggleLightMode"
+        >
+          <span :class="['mdi', isLightMode ? 'mdi-weather-night' : 'mdi-weather-sunny']"></span>
+          {{ isLightMode ? 'Dark' : 'Light' }}
+        </button>
         <router-link to="/admin" class="btn btn-launcher btn-admin-launcher">
           <span class="mdi mdi-arrow-left"></span> Back to Dashboard
         </router-link>
@@ -151,7 +161,7 @@
 
           <div class="filter-group select-premium-checkbox" style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; align-self: center; margin-left: 5px; height: 38px;">
             <input type="checkbox" id="excludeUnknownCheckbox" v-model="excludeUnknown" style="cursor: pointer; width: 16px; height: 16px;" />
-            <label for="excludeUnknownCheckbox" style="cursor: pointer; font-size: 0.85rem; font-weight: 500; color: #cbd5e1; margin-bottom: 0;">Exclude UNKNOWN</label>
+            <label for="excludeUnknownCheckbox" class="exclude-unknown-label" style="cursor: pointer; font-size: 0.85rem; font-weight: 500; color: #cbd5e1; margin-bottom: 0;">Exclude UNKNOWN</label>
           </div>
         </div>
 
@@ -215,10 +225,10 @@
                 <template v-if="getRowDirection(row) !== 'exit'">
                 <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
                 <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
-                  <span class="badge-sm" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                  <span class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
                     {{ row.gate || 'GATE 1' }}
                   </span>
-                  <span class="badge-sm" :style="{
+                  <span :class="['badge-sm', (row.direction || 'entry') === 'entry' ? 'badge-dir-entry' : 'badge-dir-exit']" :style="{
                     background: (row.direction || 'entry') === 'entry' ? 'rgba(40,167,69,0.15)' : 'rgba(23,162,184,0.15)',
                     color: (row.direction || 'entry') === 'entry' ? '#2ebd4e' : '#00bcd4',
                     padding: '2px 6px',
@@ -307,10 +317,10 @@
                 <template v-if="getRowDirection(row) === 'exit'">
                   <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
                   <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
-                    <span class="badge-sm" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                    <span class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
                       {{ row.gate || 'GATE 1' }}
                     </span>
-                    <span class="badge-sm" style="background: rgba(23,162,184,0.15); color: #00bcd4; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                    <span class="badge-sm badge-dir-exit" style="background: rgba(23,162,184,0.15); color: #00bcd4; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
                       exit
                     </span>
                   </div>
@@ -371,7 +381,7 @@
           <div class="modal-header">
             <h3>
               <span class="mdi mdi-image-multiple" style="color: #17a2b8;"></span>
-              Deep Audit Profile Explorer: <span style="color: #ffc107;">{{ displayPlate(selectedVehicle.plate_key) }}</span>
+              Deep Audit Profile Explorer: <span class="modal-plate-title" style="color: #ffc107;">{{ displayPlate(selectedVehicle.plate_key) }}</span>
             </h3>
             <button class="close-btn" @click="closeModal">&times;</button>
           </div>
@@ -582,6 +592,17 @@ const showFilters = ref(readFiltersOpen())
 const toggleFilters = () => {
   showFilters.value = !showFilters.value
   try { localStorage.setItem(FILTERS_OPEN_KEY, showFilters.value ? '1' : '0') } catch { /* storage unavailable */ }
+}
+
+// Light mode for readability in bright surroundings (remembered per browser)
+const LIGHT_MODE_KEY = 'comparison_light_mode'
+const readLightMode = () => {
+  try { return localStorage.getItem(LIGHT_MODE_KEY) === '1' } catch { return false }
+}
+const isLightMode = ref(readLightMode())
+const toggleLightMode = () => {
+  isLightMode.value = !isLightMode.value
+  try { localStorage.setItem(LIGHT_MODE_KEY, isLightMode.value ? '1' : '0') } catch { /* storage unavailable */ }
 }
 
 // Non-default filters, shown on the toggle so collapsed filters never silently hide rows
@@ -1406,7 +1427,7 @@ onUnmounted(() => {
 
 <style scoped>
 /* Main View Architecture */
-.admin-container { flex: 1; background-color: #111; padding: 40px; color: white; overflow-y: auto; height: 100%; box-sizing: border-box;}
+.admin-container { flex: 1; background-color: #111; padding: 40px; color: white; overflow-y: auto; height: 100%; box-sizing: border-box; color-scheme: dark; transition: background-color 0.25s ease, color 0.25s ease; }
 .admin-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;}
 .launcher-actions { display: flex; gap: 12px; }
 
@@ -1416,6 +1437,7 @@ onUnmounted(() => {
   cursor: pointer; font-weight: bold; background: rgba(255,255,255,0.05); color: #eee;
 }
 .btn-launcher:hover { background: #fff; color: #111; }
+.btn-theme-toggle { font-family: inherit; }
 
 .reconcile-summary-row {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
@@ -2154,4 +2176,136 @@ onUnmounted(() => {
   gap: 3px;
   justify-content: start;
 }
+
+/* ========================================================= */
+/* ☀️ LIGHT MODE (high contrast for bright / outdoor screens)  */
+/* Accent colors are darkened so they stay readable on white. */
+/* !important is only used where the template sets inline styles. */
+/* ========================================================= */
+.admin-container.light { background-color: #eef1f4; color: #111827; color-scheme: light; }
+
+/* Header & summary */
+.light .page-title { color: #0e7490 !important; }
+.light .btn-launcher { background: #fff; color: #111827; border-color: #cbd2d9; }
+.light .btn-launcher:hover { background: #111827; color: #fff; }
+.light .reconcile-summary-row { background: #fff; border-color: #d8dde3; }
+.light .db-badge { color: #0e7490; background: rgba(14, 116, 144, 0.08); border-color: rgba(14, 116, 144, 0.25); }
+.light .db-dot { background-color: #0e7490; }
+.light .connection-badge.online { color: #15803d; background: rgba(21, 128, 61, 0.08); }
+.light .connection-badge.offline { color: #be123c; background: rgba(190, 18, 60, 0.08); }
+.light .connection-badge.online .pulse-ping,
+.light .connection-badge.online .pulse-ping::after { background-color: #15803d; }
+
+/* KPI cards */
+.light .stat-card { background: #fff; }
+.light .stat-card:hover, .light .stat-card:focus-visible { background: #f8fafc; }
+.light .stat-card::after { background: #111827; color: #fff; border-color: #111827; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25); }
+.light .stat-total { border-color: #cbd2d9; }
+.light .stat-total .icon { color: #4b5563; }
+.light .stat-matched .icon { color: #15803d; }
+.light .stat-corrected .icon { color: #0e7490; }
+.light .stat-partial .icon { color: #a16207; }
+.light .stat-mismatch .icon, .light .stat-ticketed .icon { color: #be123c; }
+
+/* Card, filters, search */
+.light .live-actions-card { background: #fff; border-color: #d8dde3; }
+.light .card-header-with-status h2, .light .card-header-with-status h2 .mdi { color: #c2410c !important; }
+.light .btn-filter-toggle { background: #fff; border-color: #cbd2d9; color: #374151; }
+.light .btn-filter-toggle:hover, .light .btn-filter-toggle.open { border-color: #c2410c; color: #111827; }
+.light .filter-count-badge { background: rgba(194, 65, 12, 0.1); color: #c2410c; }
+.light .filter-controls-row { background: #f8fafc; border-color: #e2e6ea; }
+.light .filter-label { color: #4b5563; }
+.light .exclude-unknown-label { color: #374151 !important; }
+.light .select-premium, .light .search-input { background: #fff; border-color: #cbd2d9; color: #111827; }
+.light .select-premium:hover { background: #f8fafc; border-color: #9ca3af; }
+.light .search-icon, .light .clear-search-btn { color: #6b7280; }
+.light .clear-search-btn:hover { color: #111827; }
+.light .btn-export, .light .text-green { color: #15803d; }
+.light .btn-export:hover .text-green { color: #fff; }
+
+/* Table */
+.light .table-responsive { background: #fff; border-color: #cbd2d9; }
+.light .comparison-table th { background-color: #e5e8ec; color: #374151; border-bottom-color: #cbd2d9; box-shadow: inset 0 -2px 0 #cbd2d9; }
+.light .comparison-table td { border-bottom-color: #e5e8ec; }
+.light .col-cell-front, .light .col-cell-back, .light .col-cell-hik,
+.light .col-cell-ops, .light .col-cell-decision, .light .col-cell-exit { border-left-color: #e5e8ec; }
+.light .clickable-row:hover { background: #f1f5f9 !important; }
+.light .clickable-row:active { background: #e2e8f0 !important; }
+.light .clickable-row:hover td:first-child { box-shadow: inset 3px 0 0 #0e7490; }
+.light .comparison-table tr.row-exit { background: #f3f4f6; }
+.light .comparison-table tr.row-exit td { border-bottom-color: #e2e6ea; }
+.light .comparison-table tr.row-exit:hover { background: #e9edf2 !important; }
+.light .row-mismatch { background: rgba(190, 18, 60, 0.04); }
+.light .row-partial { background: rgba(161, 98, 7, 0.03); }
+.light .row-matched { background: rgba(21, 128, 61, 0.03); }
+.light .row-corrected { background: rgba(14, 116, 144, 0.03); }
+.light .no-data-row { color: #6b7280; }
+
+.light .text-muted { color: #6b7280; }
+.light .text-highlight { color: #0e7490; }
+.light .text-orange { color: #c2410c !important; }
+.light .text-purple { color: #7e22ce !important; }
+.light .type-text { color: #374151; }
+.light .conf-text { color: #6b7280; }
+.light .conf-text.conf-low { color: #dc2626 !important; }
+.light .conf-text.conf-mid { color: #0e7490 !important; }
+.light .conf-text.conf-high { color: #15803d !important; }
+
+.light .plate-badge { background: #f3f4f6; color: #111827; border-color: #cbd2d9; }
+.light .badge-front { border-left-color: #0e7490; }
+.light .badge-back { border-left-color: #15803d; }
+.light .badge-hik { border-left-color: #c2410c; }
+.light .badge-admin { border-left-color: #7e22ce; }
+.light .plate-badge.badge-chosen { border-color: #15803d !important; background: rgba(21, 128, 61, 0.1) !important; box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.15); }
+
+.light .badge-gate { background: #e5e8ec !important; color: #374151 !important; }
+.light .badge-dir-entry { background: rgba(21, 128, 61, 0.12) !important; color: #15803d !important; }
+.light .badge-dir-exit { background: rgba(14, 116, 144, 0.12) !important; color: #0e7490 !important; }
+
+.light .dispo-tag.na { background: #f3f4f6; color: #4b5563; }
+.light .dispo-tag.ticket, .light .decision-tag.ticket { background: rgba(190, 18, 60, 0.1); color: #be123c; border-color: rgba(190, 18, 60, 0.25); }
+.light .dispo-tag.car_lp, .light .decision-tag.system { background: rgba(14, 116, 144, 0.1); color: #0e7490; border-color: rgba(14, 116, 144, 0.25); }
+.light .dispo-tag.motor_lp { background: rgba(161, 98, 7, 0.1); color: #a16207; border-color: rgba(161, 98, 7, 0.25); }
+.light .status-tag.matched { background: rgba(21, 128, 61, 0.1); color: #15803d; }
+.light .status-tag.mismatch { background: rgba(190, 18, 60, 0.1); color: #be123c; }
+.light .status-tag.partial { background: rgba(161, 98, 7, 0.1); color: #a16207; }
+.light .status-tag.corrected { background: rgba(14, 116, 144, 0.1); color: #0e7490; box-shadow: none; }
+
+.light .btn-load-more { background: #fff; border-color: #cbd2d9; color: #374151; }
+.light .btn-load-more:hover { background: #111827; border-color: #111827; color: #fff; }
+.light .btn-back-to-top { background: #fff; border-color: #cbd2d9; color: #0e7490; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18); }
+.light .btn-back-to-top:hover { background: #f1f5f9; border-color: #0e7490; }
+
+/* Detail modal */
+.light .modal-overlay { background: rgba(15, 23, 42, 0.55); }
+.light .modal-card { background: #fff; border-color: #cbd2d9; box-shadow: 0 15px 60px rgba(15, 23, 42, 0.3); }
+.light .modal-header { background: #f3f4f6; border-bottom-color: #e2e6ea; }
+.light .modal-plate-title { color: #b45309 !important; }
+.light .close-btn { color: #6b7280; }
+.light .close-btn:hover { color: #111827; }
+.light .meta-summary-footer { background: #f8fafc; border-bottom-color: #e2e6ea; }
+.light .meta-item strong { color: #4b5563; }
+.light .text-warn { color: #b45309; }
+.light .text-dim { color: #6b7280 !important; }
+.light .camera-gallery-section, .light .data-block-card { background: #f8fafc; border-color: #e2e6ea; }
+.light .section-front h3 { color: #0e7490; }
+.light .section-back h3 { color: #15803d; }
+.light .gallery-image-wrapper { background: #fff; border-color: #e2e6ea; }
+.light .gallery-image-wrapper h5 { color: #6b7280; }
+.light .gallery-image-wrapper img { background: #f3f4f6; border-color: #e2e6ea; }
+.light .no-img-box { color: #6b7280; border-color: #cbd2d9; }
+.light .media-loader-box { color: #0e7490; }
+.light .http-link-label { color: #7e22ce; }
+.light .data-block-card h4 { color: #c2410c; border-bottom-color: #e2e6ea; }
+.light .sub-header-purple { color: #7e22ce; }
+.light .sub-header-cyan { color: #0e7490; }
+.light .sub-header-green { color: #15803d; }
+.light .sub-header-orange { color: #b45309; }
+.light .telemetry-group { background: #fff; border-color: #e2e6ea; }
+.light .data-row .label { color: #6b7280; }
+.light .data-row .val { color: #111827; }
+.light .highlight-text { color: #0e7490 !important; }
+.light .no-data-msg { color: #6b7280; }
+.light .correction-details { color: #0e7490; }
+.light .source-mini { color: #6b7280; }
 </style>
