@@ -1440,8 +1440,10 @@ onUnmounted(() => {
 /* Main View Architecture */
 /* Page is a full-height column: header, KPIs and filters stay put and the table fills the rest,
    so the table's own scrollbar is the only one (the page only scrolls on very short screens) */
-.admin-container { flex: 1; display: flex; flex-direction: column; background-color: #111; padding: 40px; color: white; overflow-y: auto; height: 100%; box-sizing: border-box; color-scheme: dark; transition: background-color 0.25s ease, color 0.25s ease; }
-.admin-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; flex-shrink: 0; }
+/* No top padding here: sticky table headers stop at the scroll container's padding edge, which left a gap above
+   them. The header row's margin-top supplies the same spacing instead. */
+.admin-container { flex: 1; display: flex; flex-direction: column; background-color: #111; padding: 0 40px 40px; color: white; overflow-y: auto; height: 100%; box-sizing: border-box; color-scheme: dark; transition: background-color 0.25s ease, color 0.25s ease; }
+.admin-header-row { display: flex; justify-content: space-between; align-items: center; margin-top: 40px; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; flex-shrink: 0; }
 .launcher-actions { display: flex; gap: 12px; }
 
 .btn-launcher {
