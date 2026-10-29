@@ -81,6 +81,28 @@
           <span class="slider round"></span>
         </label>
       </div>
+
+      <!-- Disposition Table Layout -->
+      <div class="settings-row" :class="{ 'split-exit-active': config.split_exit_layout }">
+        <div class="settings-info">
+          <span class="label-with-info">
+            Split Exit Layout:
+            <div class="tooltip-container">
+              <span class="mdi mdi-information-outline info-icon"></span>
+              <div class="tooltip-content">
+                <p class="tooltip-title">Split Exit Layout</p>
+                <p><strong></strong> On the Disposition table, shows entry plates in a left column and exit plates in a separate right column, with exit rows aligned to the right. When off, there is a single plate column and every row is left-aligned.</p>
+                <p class="tech-tooltip"><strong>Technical:</strong> Controls <code>split_exit_layout</code>. Display only; applies live to every open Disposition page.</p>
+              </div>
+            </div>
+          </span>
+          <span class="settings-subtext">{{ config.split_exit_layout ? 'Entry Left / Exit Right' : 'Single Plate Column' }}</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" :checked="config.split_exit_layout" @change="emit('toggle-split-exit-layout')">
+          <span class="slider round"></span>
+        </label>
+      </div>
     </div>
     
     <!-- Timer Settings -->
@@ -133,6 +155,7 @@ const emit = defineEmits([
   'toggle-camera-auto-exit-only',
   'toggle-real-device-payment',
   'toggle-automatic-payment',
+  'toggle-split-exit-layout',
   'save-timers'
 ])
 </script>
@@ -292,6 +315,17 @@ input:checked + .slider:before {
 }
 .auto-pay-active input:checked + .slider:before {
   background-color: #007bff;
+}
+
+.split-exit-active .settings-subtext {
+  color: #80deea;
+}
+.split-exit-active input:checked + .slider {
+  background-color: rgba(23, 162, 184, 0.2);
+  border-color: #17a2b8;
+}
+.split-exit-active input:checked + .slider:before {
+  background-color: #17a2b8;
 }
 
 .real-device-active input:checked + .slider {

@@ -49,7 +49,9 @@ GLOBAL_CONFIG = {
     "real_device_payment": False,
     "teller_process_delay_seconds": 2,
     "teller_cooldown_seconds": 3,
-    "camera_mapping": {}
+    "camera_mapping": {},
+    # Disposition table: separate Exit plate column with exit rows right-aligned
+    "split_exit_layout": True
 }
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")

@@ -280,6 +280,8 @@ def handle_update_config(data):
     GLOBAL_CONFIG['enable_automatic_payment'] = bool(data.get('enable_automatic_payment', True))
     GLOBAL_CONFIG['teller_process_delay_seconds'] = int(data.get('teller_process_delay', 2))
     GLOBAL_CONFIG['teller_cooldown_seconds'] = int(data.get('teller_cooldown', 3))
+    if 'split_exit_layout' in data:
+        GLOBAL_CONFIG['split_exit_layout'] = bool(data['split_exit_layout'])
     if 'camera_mapping' in data:
         GLOBAL_CONFIG['camera_mapping'] = data['camera_mapping']
         for ip in list(unregistered_cameras):

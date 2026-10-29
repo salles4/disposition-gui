@@ -190,7 +190,7 @@
           <thead>
             <tr>
               <th><span class="mdi mdi-clock-outline"></span> Timestamp</th>
-              <th><span class="mdi mdi-key-variant"></span> Entry Plate Key</th>
+              <th><span class="mdi mdi-key-variant"></span> {{ splitExitLayout ? 'Entry Plate Key' : 'Target Plate Key' }}</th>
               <th class="col-header-front"><span class="mdi mdi-camera"></span> Front Camera</th>
               <th class="col-header-back"><span class="mdi mdi-camera-rear"></span> Back Camera</th>
               <th class="col-header-hik"><span class="mdi mdi-server-network"></span> HikCentral Data</th>
@@ -200,13 +200,13 @@
               <th class="col-header-decision"><span class="mdi mdi-swap-horizontal-bold"></span> Process</th>
               <th style="text-align: center;"><span class="mdi mdi-list-status"></span> Validation</th>
               -->
-              <th class="col-header-exit"><span class="mdi mdi-key-variant"></span> Exit Plate Key</th>
+              <th v-if="splitExitLayout" class="col-header-exit" style="text-align: right;"><span class="mdi mdi-key-variant"></span> Exit Plate Key</th>
             </tr>
           </thead>
           <!-- Rows slide in, and glide into place when new ones are inserted or filters change -->
           <TransitionGroup tag="tbody" name="row">
             <tr v-if="visibleComparisonList.length === 0" key="__empty__">
-              <td colspan="8" class="no-data-row">
+              <td :colspan="splitExitLayout ? 8 : 7" class="no-data-row">
                 <span v-if="searchQuery" class="mdi mdi-database-search" style="margin-right: 6px;"></span>
                 <span v-else class="mdi mdi-loading mdi-spin" style="margin-right: 6px;"></span>
                 {{ searchQuery ? 'No records match search filter' : 'Awaiting vehicle streaming payloads...' }}
@@ -215,14 +215,14 @@
             <tr 
               v-for="(row, index) in visibleComparisonList" 
               :key="row.plate_key || index" 
-              :class="['clickable-row', getRowClass(row)]"
+              :class="['clickable-row', getRowClass(row), { 'row-align-right': splitExitLayout && getRowDirection(row) === 'exit' }]"
               :style="{ '--row-i': Math.min(index, 12) }"
               @click="openDetailModal(row)"
             >
               <td class="text-muted">{{ formatTime(row.first_seen) }}</td>
               
               <td class="text-bold text-highlight">
-                <template v-if="getRowDirection(row) !== 'exit'">
+                <template v-if="!splitExitLayout || getRowDirection(row) !== 'exit'">
                 <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
                 <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
                   <span class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
@@ -313,7 +313,7 @@
                 </Transition>
               </td>
 
-              <td class="col-cell-exit text-bold text-highlight">
+              <td v-if="splitExitLayout" class="col-cell-exit text-bold text-highlight">
                 <template v-if="getRowDirection(row) === 'exit'">
                   <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
                   <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
@@ -593,6 +593,9 @@ const toggleFilters = () => {
   showFilters.value = !showFilters.value
   try { localStorage.setItem(FILTERS_OPEN_KEY, showFilters.value ? '1' : '0') } catch { /* storage unavailable */ }
 }
+
+// Dashboard setting (split_exit_layout): Exit plate column + right-aligned exit rows; on by default
+const splitExitLayout = ref(true)
 
 // Light mode for readability in bright surroundings (remembered per browser)
 const LIGHT_MODE_KEY = 'comparison_light_mode'
@@ -1343,6 +1346,11 @@ onMounted(() => {
     }
   })
 
+  // Table layout is a dashboard setting, pushed to every admin page on connect and whenever it changes
+  socket.on('config_sync', (cfg) => {
+    splitExitLayout.value = cfg.split_exit_layout !== false
+  })
+
   socket.on('all_time_reconciliation_stats_response', (statsData) => {
     allTimeStats.value = statsData
   })
@@ -1419,6 +1427,7 @@ onUnmounted(() => {
   socket.off('available_reconciliation_dates_response')
   socket.off('reconciliation_history_response')
   socket.off('all_time_reconciliation_stats_response')
+  socket.off('config_sync')
   socket.off('new_reconciled_vehicle')
   socket.off('reconciled_vehicle_updated')
   socket.off('vehicle_media_response')
@@ -1737,6 +1746,19 @@ onUnmounted(() => {
 .clickable-row:active {
   background: rgba(255, 255, 255, 0.07) !important;
 }
+
+/* Split exit layout: exit rows read from the right, next to the Exit Plate Key column */
+.row-align-right td { text-align: right; }
+.row-align-right .source-cell-block { align-items: flex-end; }
+.row-align-right .plate-badge { align-self: flex-end; }
+.row-align-right .nested-type-row,
+.row-align-right .cell-timestamp,
+.row-align-right .col-cell-exit > div { justify-content: flex-end; }
+.row-align-right:hover td:first-child { box-shadow: none; }
+.row-align-right:hover td:last-child { box-shadow: inset -3px 0 0 #17a2b8; }
+.light .row-align-right:hover td:first-child { box-shadow: none; }
+.light .row-align-right:hover td:last-child { box-shadow: inset -3px 0 0 #0e7490; }
+.row-align-right td:last-child { transition: box-shadow 0.2s ease; }
 
 @media (prefers-reduced-motion: reduce) {
   .row-enter-active, .row-move, .cell-fade-enter-active, .cell-fade-leave-active,
