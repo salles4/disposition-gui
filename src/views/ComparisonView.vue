@@ -1439,8 +1439,10 @@ onUnmounted(() => {
 
 <style scoped>
 /* Main View Architecture */
-.admin-container { flex: 1; background-color: #111; padding: 40px; color: white; overflow-y: auto; height: 100%; box-sizing: border-box; color-scheme: dark; transition: background-color 0.25s ease, color 0.25s ease; }
-.admin-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;}
+/* Page is a full-height column: header, KPIs and filters stay put and the table fills the rest,
+   so the table's own scrollbar is the only one (the page only scrolls on very short screens) */
+.admin-container { flex: 1; display: flex; flex-direction: column; background-color: #111; padding: 40px; color: white; overflow-y: auto; height: 100%; box-sizing: border-box; color-scheme: dark; transition: background-color 0.25s ease, color 0.25s ease; }
+.admin-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; flex-shrink: 0; }
 .launcher-actions { display: flex; gap: 12px; }
 
 .btn-launcher {
@@ -1454,6 +1456,7 @@ onUnmounted(() => {
 .reconcile-summary-row {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
   background: rgba(255, 255, 255, 0.01); padding: 12px 20px; border-radius: 6px; border: 1px solid #222;
+  flex-shrink: 0;
 }
 .stat-counter { font-size: 0.9rem; font-weight: bold; color: #888; }
 
@@ -1463,13 +1466,14 @@ onUnmounted(() => {
 }
 .db-dot { width: 6px; height: 6px; border-radius: 50%; background-color: #17a2b8; }
 
-.live-actions-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 25px; box-sizing: border-box; }
+.live-actions-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 25px; box-sizing: border-box; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.live-actions-card > .card-header-with-status, .live-actions-card > .filter-controls-row { flex-shrink: 0; }
 .card-header-with-status h2 { font-size: 1.2rem; color: #ff9800; margin: 0; display: flex; align-items: center; gap: 8px; }
 .card-subtitle { font-size: 0.85rem; color: #888; margin-top: 5px; margin-bottom: 25px; text-align: left; }
 
 /* Grid Table Formatting (8 Clean Columns) */
-/* The table box scrolls on its own (capped to the screen) so the sticky headers below stay pinned */
-.table-responsive { width: 100%; border: 1px solid #2a2a2a; border-radius: 8px; background: #151515; overflow: auto; max-height: calc(100vh - 80px); }
+/* The table box fills the remaining height and scrolls on its own, so the sticky headers below stay pinned */
+.table-responsive { width: 100%; border: 1px solid #2a2a2a; border-radius: 8px; background: #151515; overflow: auto; flex: 1 1 auto; min-height: 200px; box-sizing: border-box; }
 .comparison-table { width: 100%; min-width: 1200px; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 0.88rem; }
 .comparison-table th { position: sticky; top: 0; z-index: 10; background-color: #1f1f1f; color: #aaa; font-size: 0.78rem; padding: 16px; border-bottom: 2px solid #2a2a2a; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: inset 0 -2px 0 #2a2a2a; }
 .comparison-table td { padding: 14px 16px; border-bottom: 1px solid #222; vertical-align: middle; }
