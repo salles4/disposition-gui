@@ -146,7 +146,7 @@
             <span class="filter-label"><span class="mdi mdi-signpost-direction"></span> Process:</span>
             <select v-model="selectedRouting" class="select-premium">
               <option value="ALL">All Processes</option>
-              <option value="SYSTEM">System</option>
+              <option value="SYSTEM">Camera</option>
               <option value="TICKET">Ticket</option>
             </select>
           </div>
@@ -195,9 +195,8 @@
               <th class="col-header-back"><span class="mdi mdi-camera-rear"></span> Back Camera</th>
               <th class="col-header-hik"><span class="mdi mdi-server-network"></span> HikCentral Data</th>
               <th class="col-header-ops"><span class="mdi mdi-account-shield"></span> Admin Read</th>
-              <th class="col-header-ops"><span class="mdi mdi-swap-horizontal"></span> Disposition</th>
-              <!-- Hidden for now: Process / Validation columns
               <th class="col-header-decision"><span class="mdi mdi-swap-horizontal-bold"></span> Process</th>
+              <!-- Hidden for now: Validation column
               <th style="text-align: center;"><span class="mdi mdi-list-status"></span> Validation</th>
               -->
               <th v-if="splitExitLayout" class="col-header-exit" :style="{ textAlign: exitRowsRightAligned ? 'right' : 'left' }"><span class="mdi mdi-key-variant"></span> Exit Plate Key</th>
@@ -216,7 +215,6 @@
               v-for="(row, index) in visibleComparisonList" 
               :key="row.plate_key || index" 
               :class="['clickable-row', getRowClass(row), { 'row-align-right': splitExitLayout && exitRowsRightAligned && getRowDirection(row) === 'exit' }]"
-              :style="{ '--row-i': Math.min(index, 12) }"
               @click="openDetailModal(row)"
             >
               <td class="text-muted">{{ formatTime(row.first_seen) }}</td>
@@ -305,10 +303,10 @@
                 </Transition>
               </td>
 
-              <td class="col-cell-ops" style="vertical-align: middle;">
+              <td class="col-cell-decision" style="vertical-align: middle;">
                 <Transition name="cell-fade" mode="out-in">
-                <span :key="row.disposition || 'NA'" :class="['dispo-tag', (row.disposition || 'NA').toLowerCase().replace(' ', '_')]">
-                  {{ row.disposition || 'NA' }}
+                <span :key="getTicketingDecision(row)" :class="['decision-tag', getTicketingDecision(row).toLowerCase()]">
+                  {{ getTicketingDecision(row) === 'TICKET' ? 'Ticket' : 'Camera' }}
                 </span>
                 </Transition>
               </td>
@@ -327,14 +325,8 @@
                 </template>
               </td>
 
-              <!-- Hidden for now: Process / Validation columns (v-if instead of a comment, since the cell already contains one) -->
+              <!-- Hidden for now: Validation column (v-if instead of a comment, since the cell already contains one) -->
               <template v-if="false">
-              <td class="col-cell-decision" style="vertical-align: middle;">
-                <span :class="['decision-tag', getTicketingDecision(row).toLowerCase()]">
-                  {{ getTicketingDecision(row) === 'TICKET' ? 'Ticket' : 'System' }}
-                </span>
-              </td>
-              
               <td style="text-align: center; vertical-align: middle;">
                 <div class="validation-container">
                   <span :class="['status-tag', getValidationInfo(row).status]">
@@ -403,7 +395,7 @@
             <div class="meta-item">
               <strong>Process Mode:</strong>
               <span :class="['decision-tag', getTicketingDecision(selectedVehicle).toLowerCase()]" style="margin-left: 8px;">
-                {{ getTicketingDecision(selectedVehicle) === 'TICKET' ? 'Ticket' : 'System' }}
+                {{ getTicketingDecision(selectedVehicle) === 'TICKET' ? 'Ticket' : 'Camera' }}
               </span>
               <span class="text-dim" style="margin-left: 8px;" v-if="getTicketingRecommendation(selectedVehicle).reason">
                 ({{ getTicketingRecommendation(selectedVehicle).reason }})
@@ -916,6 +908,15 @@ const carPatterns = [
     }
   }
 
+  // Low OCR confidence on the best available camera read (same cutoff as the red conf-low class)
+  const bestCamera = getHigherConfidenceCamera(row)
+  if (bestCamera) {
+    const bestConf = parseFloat(row[`${bestCamera}_camera`].confidence) || 0
+    if (bestConf < 85) {
+      return { recommend: true, reason: `Low Camera Confidence (${bestConf}%)` }
+    }
+  }
+
   return { recommend: false, reason: 'Valid Format and Type' }
 }
 
@@ -1090,8 +1091,12 @@ const filteredComparisonList = computed(() => {
   return list
 })
 
-const visibleComparisonList = computed(() => {
-  return filteredComparisonList.value.slice(0, displayLimit.value)
+const visibleComparisonList = computed((prev) => {
+  const next = filteredComparisonList.value.slice(0, displayLimit.value)
+  // Keep the same array when no visible row changed (e.g. an excluded UNKNOWN record arrived), so the table
+  // doesn't re-render - every TransitionGroup re-render cuts short the row animations already in flight
+  if (prev && prev.length === next.length && next.every((row, i) => row === prev[i])) return prev
+  return next
 })
 
 const selectedVehicle = ref(null)
@@ -1716,14 +1721,15 @@ onUnmounted(() => {
   transform: translateY(10px);
 }
 
-/* Table row transitions (TransitionGroup name="row") */
+/* Table row transitions (TransitionGroup name="row").
+   Enter is a keyframe animation on opacity + `translate` rather than a transition: when another row is inserted
+   while this one is still entering, .row-move's `transition` shorthand would replace the fade (leaving the row
+   blank, then popping in), and a `transform` here would fight the FLIP transform Vue sets for the move. */
 .row-enter-active {
-  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
-  transition-delay: calc(var(--row-i, 0) * 25ms); /* light stagger when many rows load at once */
+  animation: row-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.row-enter-from {
-  opacity: 0;
-  transform: translateY(12px);
+@keyframes row-in {
+  from { opacity: 0; translate: 0 12px; }
 }
 /* Leaving rows drop out of the layout right away so the remaining rows can glide into place */
 .row-leave-active {
@@ -1770,10 +1776,11 @@ onUnmounted(() => {
 .row-align-right td:last-child { transition: box-shadow 0.2s ease; }
 
 @media (prefers-reduced-motion: reduce) {
-  .row-enter-active, .row-move, .cell-fade-enter-active, .cell-fade-leave-active,
+  .row-move, .cell-fade-enter-active, .cell-fade-leave-active,
   .clickable-row td:first-child, .btn-back-to-top, .back-to-top-enter-active, .back-to-top-leave-active {
     transition: none;
   }
+  .row-enter-active { animation: none; }
 }
 
 @keyframes pulse-slow {
