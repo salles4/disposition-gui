@@ -224,6 +224,7 @@
                 <div class="plate-code-display" style="font-size: 1.05rem;">
                   {{ displayPlate(row.plate_key) }}
                   <span v-if="row.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
+                  <span v-else-if="awaitingServerCheck.has(row.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" title="Waiting to check server (/plate-no)"></span>
                 </div>
                 <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
                   <span class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
@@ -379,6 +380,7 @@
               <div class="modal-title-row">
                 <span class="modal-plate-title">{{ displayPlate(selectedVehicle.plate_key) }}</span>
                 <span v-if="selectedVehicle.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
+                <span v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" title="Waiting to check server (/plate-no)"></span>
                 <span class="modal-chip">{{ selectedVehicle.gate || 'GATE 1' }}</span>
                 <span :class="['modal-chip', getRowDirection(selectedVehicle) === 'exit' ? 'chip-exit' : 'chip-entry']">{{ selectedVehicle.direction || 'entry' }}</span>
                 <span class="modal-first-seen"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.first_seen) }}</span>
@@ -943,6 +945,22 @@ const updateTicketingDecision = (row, decision) => {
 }
 
 const getRowDirection = (row) => (row.direction || 'entry').toLowerCase()
+
+// The backend asks /plate-no about each entry 45s after first detection; spin until server_saved lands.
+// Capped so a check lost to a backend restart doesn't spin forever.
+const SERVER_CHECK_WINDOW_MS = 60000
+const awaitingServerCheck = ref(new Set())
+const refreshAwaitingServerCheck = () => {
+  const now = Date.now()
+  const keys = comparisonList.value
+    .filter(row => row.server_saved == null && getRowDirection(row) === 'entry' && now - new Date(row.first_seen).getTime() < SERVER_CHECK_WINDOW_MS)
+    .map(row => row.plate_key)
+  // Only swap the Set when membership changes, so the table isn't re-rendered every tick
+  const current = awaitingServerCheck.value
+  if (keys.length !== current.size || keys.some(key => !current.has(key))) {
+    awaitingServerCheck.value = new Set(keys)
+  }
+}
 const getRowGate = (row) => (row.gate || 'GATE 1').toUpperCase()
 
 const availableGates = computed(() => {
@@ -1338,6 +1356,7 @@ onMounted(() => {
 
   socket.on('reconciliation_history_response', (historyList) => {
     comparisonList.value = [...historyList].reverse()
+    refreshAwaitingServerCheck()
     
     // Find latest camera activity from history
     let latestTime = 0
@@ -1392,6 +1411,7 @@ onMounted(() => {
       } else {
         comparisonList.value.unshift(newVehicle)
       }
+      refreshAwaitingServerCheck()
     }
   })
 
@@ -1400,6 +1420,11 @@ onMounted(() => {
     if (existingIdx !== -1) {
       comparisonList.value[existingIdx] = updatedVehicle
     }
+    // Keep an open detail modal live (e.g. the server check result arriving)
+    if (selectedVehicle.value && selectedVehicle.value.plate_key === updatedVehicle.plate_key) {
+      selectedVehicle.value = updatedVehicle
+    }
+    refreshAwaitingServerCheck()
   })
 
   // Catch the heavy lazy-loaded images response packet
@@ -1413,6 +1438,7 @@ onMounted(() => {
   // Start checking camera offline state every 2 seconds
   cameraTimer = setInterval(() => {
     isCameraOnline.value = (Date.now() - lastCameraActivity.value) < 45000
+    refreshAwaitingServerCheck()
   }, 2000)
 
   // Infinite Scroll IntersectionObserver
@@ -2242,6 +2268,9 @@ onUnmounted(() => {
 /* Header & summary */
 .server-saved-check { color: #2ebd4e; font-size: 0.9rem; margin-left: 4px; vertical-align: middle; }
 .light .server-saved-check { color: #15803d; }
+.server-check-pending { color: #888; font-size: 0.9rem; margin-left: 4px; vertical-align: middle; }
+.modal-title-row .server-check-pending { font-size: 1.1rem; margin-left: 0; }
+.light .server-check-pending { color: #6b7280; }
 .light .page-title { color: #0e7490 !important; }
 .light .btn-launcher { background: #fff; color: #111827; border-color: #cbd2d9; }
 .light .btn-launcher:hover { background: #111827; color: #fff; }
