@@ -2,10 +2,11 @@ import threading
 import os
 import json
 import time
+import requests
 from datetime import datetime, timedelta
 from scripts.app_context import socketio
 import scripts.config as config
-from scripts.utils import ADMIN_CAR_CODES, ADMIN_MOTORCYCLE_CODES
+from scripts.utils import ADMIN_CAR_CODES, ADMIN_MOTORCYCLE_CODES, format_plate
 
 
 def write_json_atomic(path, data):
@@ -445,8 +446,11 @@ init_all_time_stats()
 start_reconciliation_cleanup_thread()
 
 def update_ticketing_decision(plate_key, date_str, decision):
+    return update_reconciliation_field(plate_key, date_str, "ticketing_decision", decision)
+
+def update_reconciliation_field(plate_key, date_str, field, value):
     global daily_reconciliation_history
-    
+
     # Extract date part if full ISO string
     if date_str and "T" in date_str:
         date_str = date_str.split("T")[0]
@@ -458,12 +462,16 @@ def update_ticketing_decision(plate_key, date_str, decision):
     updated_record = None
     
     with reconciliation_lock:
+        # Keep the in-flight record in sync too, otherwise its next save would drop the field
+        if plate_key in pending_reconciliations:
+            pending_reconciliations[plate_key][field] = value
+
         # If the date is today, we can find and update it directly in daily_reconciliation_history
         if date_str == today_str:
             ensure_today_history()
             existing_idx = next((i for i, item in enumerate(daily_reconciliation_history) if item["plate_key"] == plate_key), None)
             if existing_idx is not None:
-                daily_reconciliation_history[existing_idx]["ticketing_decision"] = decision
+                daily_reconciliation_history[existing_idx][field] = value
                 updated_record = daily_reconciliation_history[existing_idx]
                 
                 # Write to disk
@@ -483,14 +491,60 @@ def update_ticketing_decision(plate_key, date_str, decision):
                     
                     existing_idx = next((i for i, item in enumerate(records) if item["plate_key"] == plate_key), None)
                     if existing_idx is not None:
-                        records[existing_idx]["ticketing_decision"] = decision
+                        records[existing_idx][field] = value
                         updated_record = records[existing_idx]
                         
                         write_json_atomic(metadata_file, records)
                 except Exception as e:
                     print(f"Error updating historical reconciliation log for date {date_str}: {e}", flush=True)
-                    
+
     return updated_record
+
+SERVER_SAVE_CHECK_DELAY = 45  # seconds after first detection before asking the server about an entry
+
+def plate_no_has_record(plate):
+    """True when /api/payment/plate-no knows the plate, i.e. the entry was saved on the server."""
+    res = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no",
+                        json={"licence_plate_no": plate, "terminal": config.TERMINAL_ID},
+                        headers=config.HEADERS, timeout=5)
+    if res.status_code == 200:
+        res_json = res.json()
+        if res_json.get("success") and res_json.get("data"):
+            return True
+        text = (res_json.get("message") or "").lower()
+    else:
+        text = res.text.lower()
+    # Already-paid plates are rejected, but they still exist on the server
+    return any(k in text for k in ["already paid", "payment successful", "enter park"])
+
+def check_entry_saved_on_server(plate_key):
+    with reconciliation_lock:
+        record = pending_reconciliations.get(plate_key) or next(
+            (r for r in daily_reconciliation_history if r.get("plate_key") == plate_key), None)
+        if not record or (record.get("direction") or "entry").lower() != "entry":
+            return
+        first_seen = record.get("first_seen")
+
+    key_plate = plate_key.split('_')[0]
+    # The server may store car plates spaced ("ABC 1234"), so try both spellings
+    candidates = list(dict.fromkeys([key_plate, format_plate(key_plate)[0]]))
+    saved = False
+    for plate in candidates:
+        try:
+            if plate_no_has_record(plate):
+                saved = True
+                break
+        except Exception as e:
+            print(f"[SERVER SAVE CHECK] {plate}: {e}", flush=True)
+
+    updated_record = update_reconciliation_field(plate_key, first_seen, "server_saved", saved)
+    if updated_record:
+        socketio.emit('reconciled_vehicle_updated', updated_record, to='admin_room')
+
+def schedule_server_save_check(plate_key):
+    timer = threading.Timer(SERVER_SAVE_CHECK_DELAY, check_entry_saved_on_server, args=(plate_key,))
+    timer.daemon = True
+    timer.start()
 
 def save_reconciled_record_to_disk(unified_data):
     """Splits data payload into pure text log and heavy base64 image data log."""
@@ -689,7 +743,8 @@ def process_and_buffer_bundle(sources):
                 "back_camera": None,
                 "hikcentral": None
             }
-            
+            schedule_server_save_check(matched_key)
+
         record = pending_reconciliations[matched_key]
         record["last_active"] = now.isoformat()
 

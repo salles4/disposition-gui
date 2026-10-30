@@ -221,7 +221,10 @@
               
               <td class="text-bold text-highlight">
                 <template v-if="!splitExitLayout || getRowDirection(row) !== 'exit'">
-                <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
+                <div class="plate-code-display" style="font-size: 1.05rem;">
+                  {{ displayPlate(row.plate_key) }}
+                  <span v-if="row.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
+                </div>
                 <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
                   <span class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
                     {{ row.gate || 'GATE 1' }}
@@ -371,136 +374,139 @@
       <div class="modal-overlay" v-if="selectedVehicle" @click.self="closeModal">
         <div class="modal-card">
           <div class="modal-header">
-            <h3>
-              <span class="mdi mdi-image-multiple" style="color: #17a2b8;"></span>
-              Deep Audit Profile Explorer: <span class="modal-plate-title" style="color: #ffc107;">{{ displayPlate(selectedVehicle.plate_key) }}</span>
-            </h3>
+            <div class="modal-title-block">
+              <span class="modal-eyebrow"><span class="mdi mdi-image-multiple"></span> Deep Audit Profile Explorer</span>
+              <div class="modal-title-row">
+                <span class="modal-plate-title">{{ displayPlate(selectedVehicle.plate_key) }}</span>
+                <span v-if="selectedVehicle.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
+                <span class="modal-chip">{{ selectedVehicle.gate || 'GATE 1' }}</span>
+                <span :class="['modal-chip', getRowDirection(selectedVehicle) === 'exit' ? 'chip-exit' : 'chip-entry']">{{ selectedVehicle.direction || 'entry' }}</span>
+                <span class="modal-first-seen"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.first_seen) }}</span>
+              </div>
+            </div>
             <button class="close-btn" @click="closeModal">&times;</button>
           </div>
-          
-          <div class="meta-summary-footer">
-            <div class="meta-item">
-              <strong>Evaluation Match Integrity Status:</strong>
-              <span :class="['status-tag', getValidationInfo(selectedVehicle).status]" style="margin-left: 8px;">
+
+          <div class="meta-summary-grid">
+            <div class="meta-cell">
+              <span class="meta-label">Evaluation Match Integrity Status</span>
+              <span :class="['status-tag', getValidationInfo(selectedVehicle).status]">
                 {{ getValidationInfo(selectedVehicle).text }}
               </span>
             </div>
-            <div class="meta-item" v-if="getValidationInfo(selectedVehicle).status === 'corrected'">
-              <strong>Resolution:</strong>
-              <span class="text-highlight">Use {{ getValidationInfo(selectedVehicle).correctSource }} ({{ getValidationInfo(selectedVehicle).correctData.plate }} - {{ getValidationInfo(selectedVehicle).correctData.vehicleType }})</span>
+            <div class="meta-cell" v-if="getValidationInfo(selectedVehicle).status === 'corrected'">
+              <span class="meta-label">Resolution</span>
+              <span class="meta-value text-highlight">Use {{ getValidationInfo(selectedVehicle).correctSource }} ({{ getValidationInfo(selectedVehicle).correctData.plate }} - {{ getValidationInfo(selectedVehicle).correctData.vehicleType }})</span>
             </div>
-            <div class="meta-item">
-              <strong>Calculated Automated System Disposition:</strong> <span class="text-warn">{{ selectedVehicle.disposition || 'NA' }}</span>
+            <div class="meta-cell">
+              <span class="meta-label">Calculated Automated System Disposition</span>
+              <span class="meta-value text-warn">{{ selectedVehicle.disposition || 'NA' }}</span>
             </div>
-            <div class="meta-item">
-              <strong>Process Mode:</strong>
-              <span :class="['decision-tag', getTicketingDecision(selectedVehicle).toLowerCase()]" style="margin-left: 8px;">
-                {{ getTicketingDecision(selectedVehicle) === 'TICKET' ? 'Ticket' : 'Camera' }}
+            <div class="meta-cell">
+              <span class="meta-label">Process Mode</span>
+              <span>
+                <span :class="['decision-tag', getTicketingDecision(selectedVehicle).toLowerCase()]">
+                  {{ getTicketingDecision(selectedVehicle) === 'TICKET' ? 'Ticket' : 'Camera' }}
+                </span>
               </span>
-              <span class="text-dim" style="margin-left: 8px;" v-if="getTicketingRecommendation(selectedVehicle).reason">
-                ({{ getTicketingRecommendation(selectedVehicle).reason }})
+              <span class="meta-note" v-if="getTicketingRecommendation(selectedVehicle).reason">
+                {{ getTicketingRecommendation(selectedVehicle).reason }}
               </span>
             </div>
           </div>
 
           <div class="modal-body">
-            <div class="modal-split-layout">
-              
-              <div class="media-gallery-pane">
-                
-                <div class="camera-gallery-section section-front">
-                  <h3><span class="mdi mdi-camera"></span> Front Camera Media Frames (192.168.0.64)</h3>
-                  <div class="frames-split-row" v-if="!mediaLoading">
-                    <div class="gallery-image-wrapper image-crop">
-                      <h5>Plate Text Crop</h5>
-                      <img v-if="loadedMedia.front_plate_image" :src="loadedMedia.front_plate_image" />
-                      <div v-else class="no-img-box">No Frame Buffer</div>
-                    </div>
-                    <div class="gallery-image-wrapper image-scene">
-                      <h5>Context Scene Capture (detectionPicture.jpg)</h5>
-                      <img v-if="loadedMedia.front_vehicle_image" :src="loadedMedia.front_vehicle_image" />
-                      <div v-else class="no-img-box">No Scene Frame Buffer</div>
-                    </div>
-                  </div>
-                  <div v-else class="media-loader-box"><span class="mdi mdi-loading mdi-spin"></span> Lazy loading base64 images from disk...</div>
+            <div class="source-card-grid">
+
+              <section class="source-card source-front">
+                <header class="source-card-header">
+                  <h4><span class="mdi mdi-camera"></span> Front Camera Read</h4>
+                  <span class="source-card-sub">192.168.0.64</span>
+                  <span v-if="selectedVehicle.front_camera" class="source-card-time"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.front_camera.timestamp) }}</span>
+                </header>
+                <dl v-if="selectedVehicle.front_camera" class="source-fields">
+                  <div class="field-plate"><dt>Plate</dt><dd class="plate-value">{{ selectedVehicle.front_camera.plate }}</dd></div>
+                  <div><dt>Normalized Category</dt><dd>{{ selectedVehicle.front_camera.vehicle_type }}</dd></div>
+                  <div><dt>Raw String Type</dt><dd class="text-orange">{{ selectedVehicle.front_camera.raw_type_received }}</dd></div>
+                  <div><dt>OCR Confidence</dt><dd>{{ selectedVehicle.front_camera.confidence }}%</dd></div>
+                </dl>
+                <div v-else class="no-data-msg">No entry stream received.</div>
+                <div class="media-row" v-if="!mediaLoading">
+                  <figure class="media-frame">
+                    <figcaption>Plate Text Crop</figcaption>
+                    <img v-if="loadedMedia.front_plate_image" :src="loadedMedia.front_plate_image" />
+                    <div v-else class="no-img-box">No Frame Buffer</div>
+                  </figure>
+                  <figure class="media-frame">
+                    <figcaption>Context Scene Capture (detectionPicture.jpg)</figcaption>
+                    <img v-if="loadedMedia.front_vehicle_image" :src="loadedMedia.front_vehicle_image" />
+                    <div v-else class="no-img-box">No Scene Frame Buffer</div>
+                  </figure>
                 </div>
+                <div v-else class="media-loader-box"><span class="mdi mdi-loading mdi-spin"></span> Lazy loading base64 images from disk...</div>
+              </section>
 
-                <div class="camera-gallery-section section-back">
-                  <h3><span class="mdi mdi-camera-rear"></span> Back Camera Media Frames (192.168.0.65)</h3>
-                  <div class="frames-split-row" v-if="!mediaLoading">
-                    <div class="gallery-image-wrapper image-crop">
-                      <h5>Plate Text Crop</h5>
-                      <img v-if="loadedMedia.back_plate_image" :src="loadedMedia.back_plate_image" />
-                      <div v-else class="no-img-box">No Frame Buffer</div>
-                    </div>
-                    <div class="gallery-image-wrapper image-scene">
-                      <h5>Context Scene Capture (detectionPicture.jpg)</h5>
-                      <img v-if="loadedMedia.back_vehicle_image" :src="loadedMedia.back_vehicle_image" />
-                      <div v-else class="no-img-box">No Scene Frame Buffer</div>
-                    </div>
-                  </div>
-                  <div v-else class="media-loader-box"><span class="mdi mdi-loading mdi-spin"></span> Lazy loading base64 images from disk...</div>
+              <section class="source-card source-back">
+                <header class="source-card-header">
+                  <h4><span class="mdi mdi-camera-rear"></span> Back Camera Read</h4>
+                  <span class="source-card-sub">192.168.0.65</span>
+                  <span v-if="selectedVehicle.back_camera" class="source-card-time"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.back_camera.timestamp) }}</span>
+                </header>
+                <dl v-if="selectedVehicle.back_camera" class="source-fields">
+                  <div class="field-plate"><dt>Plate</dt><dd class="plate-value">{{ selectedVehicle.back_camera.plate }}</dd></div>
+                  <div><dt>Normalized Category</dt><dd>{{ selectedVehicle.back_camera.vehicle_type }}</dd></div>
+                  <div><dt>Raw String Type</dt><dd class="text-orange">{{ selectedVehicle.back_camera.raw_type_received }}</dd></div>
+                  <div><dt>OCR Confidence</dt><dd>{{ selectedVehicle.back_camera.confidence }}%</dd></div>
+                </dl>
+                <div v-else class="no-data-msg">No entry stream received.</div>
+                <div class="media-row" v-if="!mediaLoading">
+                  <figure class="media-frame">
+                    <figcaption>Plate Text Crop</figcaption>
+                    <img v-if="loadedMedia.back_plate_image" :src="loadedMedia.back_plate_image" />
+                    <div v-else class="no-img-box">No Frame Buffer</div>
+                  </figure>
+                  <figure class="media-frame">
+                    <figcaption>Context Scene Capture (detectionPicture.jpg)</figcaption>
+                    <img v-if="loadedMedia.back_vehicle_image" :src="loadedMedia.back_vehicle_image" />
+                    <div v-else class="no-img-box">No Scene Frame Buffer</div>
+                  </figure>
                 </div>
+                <div v-else class="media-loader-box"><span class="mdi mdi-loading mdi-spin"></span> Lazy loading base64 images from disk...</div>
+              </section>
 
-                <div class="camera-gallery-section section-admin-http" v-if="selectedVehicle.core_event && selectedVehicle.core_event.image_url">
-                  <h3 style="color: #a855f7;"><span class="mdi mdi-web"></span> Core System Static HTTP Image Source</h3>
-                  <div class="gallery-image-wrapper image-scene-full">
-                    <h5>HCP Back Image Target Endpoint Link</h5>
-                    <img :src="selectedVehicle.core_event.image_url" alt="Admin Socket Target HTTP View" />
-                    <div class="http-link-label">{{ selectedVehicle.core_event.image_url }}</div>
-                  </div>
-                </div>
-              </div>
+              <section class="source-card source-hik">
+                <header class="source-card-header">
+                  <h4><span class="mdi mdi-server-network"></span> HikCentral Server</h4>
+                  <span v-if="selectedVehicle.hikcentral" class="source-card-time"><span class="mdi mdi-clock-outline"></span> {{ selectedVehicle.hikcentral.timestamp }}</span>
+                </header>
+                <dl v-if="selectedVehicle.hikcentral" class="source-fields">
+                  <div class="field-plate"><dt>Plate</dt><dd class="plate-value">{{ selectedVehicle.hikcentral.plate }}</dd></div>
+                  <div><dt>Normalized Category</dt><dd>{{ selectedVehicle.hikcentral.vehicleType }}</dd></div>
+                  <div><dt>Raw String Type</dt><dd class="text-orange">{{ selectedVehicle.hikcentral.raw_type_received }}</dd></div>
+                  <div><dt>Lane Node Name</dt><dd>{{ selectedVehicle.hikcentral.gateName }}</dd></div>
+                </dl>
+                <div v-else class="no-data-msg">No entry stream received.</div>
+              </section>
 
-              <div class="telemetry-data-pane">
-                <div class="data-block-card">
-                  <h4><span class="mdi mdi-text-box-search"></span> Source Telemetry Metadata</h4>
-                  <div class="telemetry-scroll-box">
-                    
-                    <h5 class="sub-header-purple">Admin Read (Core Display)</h5>
-                    <div v-if="selectedVehicle.core_event" class="telemetry-group">
-                      <div class="data-row"><span class="label">Time:</span><span class="val text-dim">{{ selectedVehicle.core_event.timestamp }}</span></div>
-                      <div class="data-row"><span class="label">Plate:</span><span class="val highlight-text">{{ selectedVehicle.core_event.plate_no }}</span></div>
-                      <div class="data-row"><span class="label">Normalized Category:</span><span class="val">{{ selectedVehicle.core_event.vehicle_type_code }}</span></div>
-                      <div class="data-row"><span class="label">Raw Code Received:</span><span class="val text-orange">{{ selectedVehicle.core_event.raw_type_received }}</span></div>
-                      <div class="data-row"><span class="label">Gate ID Node:</span><span class="val">Gate {{ selectedVehicle.core_event.gate_id }}</span></div>
-                      <div class="data-row"><span class="label">Percentage Factor:</span><span class="val" v-if="selectedVehicle.core_event.percentage">{{ selectedVehicle.core_event.percentage }}%</span><span class="val" v-else>N/A</span></div>
-                    </div>
-                    <div v-else class="no-data-msg">No entries logged.</div>
-
-                    <h5 class="sub-header-cyan">Front Camera Read</h5>
-                    <div v-if="selectedVehicle.front_camera" class="telemetry-group">
-                      <div class="data-row"><span class="label">Time:</span><span class="val text-dim">{{ formatTime(selectedVehicle.front_camera.timestamp) }}</span></div>
-                      <div class="data-row"><span class="label">Plate:</span><span class="val highlight-text">{{ selectedVehicle.front_camera.plate }}</span></div>
-                      <div class="data-row"><span class="label">Normalized Category:</span><span class="val">{{ selectedVehicle.front_camera.vehicle_type }}</span></div>
-                      <div class="data-row"><span class="label">Raw String Type:</span><span class="val text-orange">{{ selectedVehicle.front_camera.raw_type_received }}</span></div>
-                      <div class="data-row"><span class="label">OCR Confidence:</span><span class="val">{{ selectedVehicle.front_camera.confidence }}%</span></div>
-                    </div>
-                    <div v-else class="no-data-msg">No entry stream received.</div>
-
-                    <h5 class="sub-header-green">Back Camera Read</h5>
-                    <div v-if="selectedVehicle.back_camera" class="telemetry-group">
-                      <div class="data-row"><span class="label">Time:</span><span class="val text-dim">{{ formatTime(selectedVehicle.back_camera.timestamp) }}</span></div>
-                      <div class="data-row"><span class="label">Plate:</span><span class="val highlight-text">{{ selectedVehicle.back_camera.plate }}</span></div>
-                      <div class="data-row"><span class="label">Normalized Category:</span><span class="val">{{ selectedVehicle.back_camera.vehicle_type }}</span></div>
-                      <div class="data-row"><span class="label">Raw String Type:</span><span class="val text-orange">{{ selectedVehicle.back_camera.raw_type_received }}</span></div>
-                      <div class="data-row"><span class="label">OCR Confidence:</span><span class="val">{{ selectedVehicle.back_camera.confidence }}%</span></div>
-                    </div>
-                    <div v-else class="no-data-msg">No entry stream received.</div>
-
-                    <h5 class="sub-header-orange">HikCentral Server</h5>
-                    <div v-if="selectedVehicle.hikcentral" class="telemetry-group">
-                      <div class="data-row"><span class="label">Time:</span><span class="val text-dim">{{ selectedVehicle.hikcentral.timestamp }}</span></div>
-                      <div class="data-row"><span class="label">Plate:</span><span class="val highlight-text">{{ selectedVehicle.hikcentral.plate }}</span></div>
-                      <div class="data-row"><span class="label">Normalized Category:</span><span class="val">{{ selectedVehicle.hikcentral.vehicleType }}</span></div>
-                      <div class="data-row"><span class="label">Raw String Type:</span><span class="val text-orange">{{ selectedVehicle.hikcentral.raw_type_received }}</span></div>
-                      <div class="data-row"><span class="label">Lane Node Name:</span><span class="val">{{ selectedVehicle.hikcentral.gateName }}</span></div>
-                    </div>
-                    <div v-else class="no-data-msg">No entry stream received.</div>
-
-                  </div>
-                </div>
-              </div>
+              <section class="source-card source-admin">
+                <header class="source-card-header">
+                  <h4><span class="mdi mdi-account-shield"></span> Admin Read (Core Display)</h4>
+                  <span v-if="selectedVehicle.core_event" class="source-card-time"><span class="mdi mdi-clock-outline"></span> {{ selectedVehicle.core_event.timestamp }}</span>
+                </header>
+                <dl v-if="selectedVehicle.core_event" class="source-fields">
+                  <div class="field-plate"><dt>Plate</dt><dd class="plate-value">{{ selectedVehicle.core_event.plate_no }}</dd></div>
+                  <div><dt>Normalized Category</dt><dd>{{ selectedVehicle.core_event.vehicle_type_code }}</dd></div>
+                  <div><dt>Raw Code Received</dt><dd class="text-orange">{{ selectedVehicle.core_event.raw_type_received }}</dd></div>
+                  <div><dt>Gate ID Node</dt><dd>Gate {{ selectedVehicle.core_event.gate_id }}</dd></div>
+                  <div><dt>Percentage Factor</dt><dd>{{ selectedVehicle.core_event.percentage ? selectedVehicle.core_event.percentage + '%' : 'N/A' }}</dd></div>
+                </dl>
+                <div v-else class="no-data-msg">No entries logged.</div>
+                <figure v-if="selectedVehicle.core_event && selectedVehicle.core_event.image_url" class="media-frame">
+                  <figcaption><span class="mdi mdi-web"></span> Core System Static HTTP Image Source · HCP Back Image Target Endpoint Link</figcaption>
+                  <img :src="selectedVehicle.core_event.image_url" alt="Admin Socket Target HTTP View" />
+                  <div class="http-link-label">{{ selectedVehicle.core_event.image_url }}</div>
+                </figure>
+              </section>
 
             </div>
           </div>
@@ -1570,71 +1576,82 @@ onUnmounted(() => {
 .no-data-row { text-align: center; color: #444; padding: 40px 0 !important; }
 
 /* ========================================================= */
-/* 📄 SPLIT-PANE MODAL VIEW DESIGN WITH DETAILED TELEMETRY   */
+/* 📄 DETAIL MODAL: ONE CARD PER SOURCE (IMAGES + FIELDS)    */
 /* ========================================================= */
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
   background: rgba(0, 0, 0, 0.9); display: flex; align-items: center; justify-content: center; z-index: 999;
 }
 .modal-card {
-  background: #161616; border: 1px solid #333; width: 1380px; max-width: 95%;
+  background: #161616; border: 1px solid #333; width: 1380px; max-width: 95%; max-height: 92vh;
   border-radius: 8px; box-shadow: 0 15px 60px rgba(0,0,0,0.8); overflow: hidden;
+  display: flex; flex-direction: column;
 }
 .modal-header {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
   padding: 16px 24px; border-bottom: 1px solid #252525; background: #202020;
 }
-.modal-header h3 { margin: 0; font-size: 1rem; }
+.modal-title-block { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.modal-eyebrow { font-size: 0.72rem; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.6px; }
+.modal-eyebrow .mdi { color: #17a2b8; }
+.modal-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.modal-plate-title { font-family: monospace; font-size: 1.5rem; font-weight: 700; color: #ffc107; letter-spacing: 1px; }
+.modal-title-row .server-saved-check { font-size: 1.1rem; margin-left: 0; }
+.modal-chip { padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; background: rgba(255,255,255,0.06); color: #cbd5e1; }
+.modal-chip.chip-entry { background: rgba(40,167,69,0.15); color: #2ebd4e; }
+.modal-chip.chip-exit { background: rgba(23,162,184,0.15); color: #00bcd4; }
+.modal-first-seen { font-size: 0.78rem; color: #888; }
 .close-btn { background: none; border: none; color: #888; font-size: 1.5rem; cursor: pointer; line-height: 1; }
 .close-btn:hover { color: #fff; }
 
-.modal-body { padding: 24px; max-height: 85vh; overflow-y: auto; }
+.meta-summary-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  border-bottom: 1px solid #252525; background: #1b1b1b;
+}
+.meta-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 24px; border-right: 1px solid #252525; min-width: 0; }
+.meta-cell:last-child { border-right: none; }
+.meta-label { font-size: 0.68rem; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: 0.5px; }
+.meta-value { font-size: 0.88rem; }
+.meta-note { font-size: 0.75rem; color: #888; }
+.text-warn { color: #ffca28; font-weight: bold; }
 
-.modal-split-layout { display: flex; gap: 24px; flex-wrap: wrap; }
-.media-gallery-pane { flex: 2 1 700px; display: flex; flex-direction: column; gap: 20px; }
-.telemetry-data-pane { flex: 1 1 380px; }
+.modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
 
-.camera-gallery-section { background: #111; border: 1px solid #222; padding: 16px; border-radius: 6px; }
-.camera-gallery-section h3 { margin-top: 0; margin-bottom: 14px; font-size: 0.88rem; letter-spacing: 0.5px; }
-.section-front h3 { color: #17a2b8; }
-.section-back h3 { color: #28a745; }
+.source-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) {
+  .source-card-grid { grid-template-columns: 1fr; }
+}
 
-.frames-split-row { display: flex; gap: 16px; flex-wrap: wrap; }
-.gallery-image-wrapper { background: #090909; border: 1px solid #222; border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box; }
+.source-card {
+  background: #111; border: 1px solid #222; border-top: 3px solid var(--source-accent); border-radius: 6px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0;
+}
+.source-front { --source-accent: #17a2b8; }
+.source-back { --source-accent: #28a745; }
+.source-hik { --source-accent: #ff9800; }
+.source-admin { --source-accent: #a855f7; }
 
-.image-crop { flex: 1 1 180px; max-width: 220px; }
-.image-scene { flex: 2 1 420px; }
-.image-scene-full { width: 100%; }
+.source-card-header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.source-card-header h4 { margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--source-accent); }
+.source-card-sub { font-family: monospace; font-size: 0.74rem; color: #666; }
+.source-card-time { margin-left: auto; font-size: 0.76rem; color: #888; }
 
-.gallery-image-wrapper h5 { margin: 0; font-size: 0.74rem; color: #666; text-transform: uppercase; }
-.gallery-image-wrapper img { width: 100%; height: auto; max-height: 240px; border-radius: 2px; object-fit: contain; border: 1px solid #1a1a1a; background: #030303; }
-.no-img-box { height: 120px; display: flex; align-items: center; justify-content: center; color: #444; font-size: 0.78rem; font-family: monospace; border: 1px solid #1d1d1d; border-style: dashed; }
+.source-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0; }
+.source-fields > div { min-width: 0; }
+.source-fields .field-plate { grid-column: 1 / -1; }
+.source-fields dt { font-size: 0.68rem; color: #666; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px; }
+.source-fields dd { margin: 0; font-size: 0.85rem; color: #eee; font-weight: 500; overflow-wrap: anywhere; }
+.source-fields .plate-value { font-family: monospace; font-size: 1.25rem; font-weight: 700; color: var(--source-accent); }
+.no-data-msg { font-size: 0.8rem; color: #555; font-style: italic; }
+
+.media-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; }
+.media-frame { margin: 0; background: #090909; border: 1px solid #222; border-radius: 4px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.media-frame figcaption { font-size: 0.68rem; color: #666; text-transform: uppercase; overflow-wrap: anywhere; }
+.media-frame img { width: 100%; height: 180px; object-fit: contain; border-radius: 2px; background: #030303; }
+.no-img-box { height: 180px; display: flex; align-items: center; justify-content: center; color: #444; font-size: 0.78rem; font-family: monospace; border: 1px dashed #1d1d1d; }
 .media-loader-box { text-align: center; color: #17a2b8; font-size: 0.85rem; padding: 30px 0; font-weight: bold; font-family: monospace; }
 
-.http-link-label { font-family: monospace; font-size: 0.72rem; color: #a855f7; background: rgba(168, 85, 247, 0.05); padding: 6px; border-radius: 4px; word-break: break-all; text-align: left; margin-top: 5px; }
-
-/* Telemetry Card Shading Grid */
-.data-block-card { background: #111; border: 1px solid #222; border-radius: 6px; padding: 20px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
-.data-block-card h4 { margin-top: 0; margin-bottom: 15px; font-size: 0.9rem; color: #ff9800; border-bottom: 1px solid #222; padding-bottom: 10px; }
-.telemetry-scroll-box { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex-grow: 1; }
-
-.telemetry-scroll-box h5 { margin-top: 5px; margin-bottom: 5px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
-.sub-header-purple { color: #b388ff; }
-.sub-header-cyan { color: #00e5ff; }
-.sub-header-green { color: #69f0ae; }
-.sub-header-orange { color: #ffd740; }
-
-.telemetry-group { background: #090909; border: 1px solid #1f1f1f; padding: 10px 14px; border-radius: 4px; display: flex; flex-direction: column; gap: 8px; }
-.data-row { display: flex; justify-content: space-between; font-size: 0.82rem; }
-.data-row .label { color: #666; }
-.data-row .val { color: #eee; font-weight: 500; }
-.highlight-text { color: #00e5ff !important; font-weight: bold !important; font-family: monospace; font-size: 1.2rem; }
-.text-dim { color: #444 !important; font-size: 0.75rem; }
-.no-data-msg { font-size: 0.78rem; color: #444; font-style: italic; padding: 2px 14px; }
-
-.meta-summary-footer { display: flex; gap: 40px; background: #202020; padding: 14px 24px; border-bottom: 1px solid #252525; font-size: 0.82rem; flex-wrap: wrap; }
-.meta-item strong { color: #666; margin-right: 6px; }
-.text-warn { color: #ffca28; font-weight: bold; }
+.http-link-label { font-family: monospace; font-size: 0.72rem; color: #a855f7; background: rgba(168, 85, 247, 0.05); padding: 6px; border-radius: 4px; word-break: break-all; text-align: left; }
 .dispo-tag.car_lp { background: rgba(23, 162, 184, 0.15); color: #17a2b8; border-color: rgba(23, 162, 184, 0.2); }
 .dispo-tag.motor_lp { background: rgba(234, 179, 8, 0.15); color: #eab308; border-color: rgba(234, 179, 8, 0.2); }
 /* Custom row status styles */
@@ -2223,6 +2240,8 @@ onUnmounted(() => {
 .admin-container.light { background-color: #eef1f4; color: #111827; color-scheme: light; }
 
 /* Header & summary */
+.server-saved-check { color: #2ebd4e; font-size: 0.9rem; margin-left: 4px; vertical-align: middle; }
+.light .server-saved-check { color: #15803d; }
 .light .page-title { color: #0e7490 !important; }
 .light .btn-launcher { background: #fff; color: #111827; border-color: #cbd2d9; }
 .light .btn-launcher:hover { background: #111827; color: #fff; }
@@ -2318,31 +2337,34 @@ onUnmounted(() => {
 .light .modal-overlay { background: rgba(15, 23, 42, 0.55); }
 .light .modal-card { background: #fff; border-color: #cbd2d9; box-shadow: 0 15px 60px rgba(15, 23, 42, 0.3); }
 .light .modal-header { background: #f3f4f6; border-bottom-color: #e2e6ea; }
+.light .modal-eyebrow { color: #6b7280; }
+.light .modal-eyebrow .mdi { color: #0e7490; }
 .light .modal-plate-title { color: #b45309 !important; }
+.light .modal-chip { background: #e5e8ec; color: #374151; }
+.light .modal-chip.chip-entry { background: rgba(21, 128, 61, 0.12); color: #15803d; }
+.light .modal-chip.chip-exit { background: rgba(14, 116, 144, 0.12); color: #0e7490; }
+.light .modal-first-seen { color: #6b7280; }
 .light .close-btn { color: #6b7280; }
 .light .close-btn:hover { color: #111827; }
-.light .meta-summary-footer { background: #f8fafc; border-bottom-color: #e2e6ea; }
-.light .meta-item strong { color: #4b5563; }
+.light .meta-summary-grid { background: #f8fafc; border-bottom-color: #e2e6ea; }
+.light .meta-cell { border-right-color: #e2e6ea; }
+.light .meta-label { color: #4b5563; }
+.light .meta-note { color: #6b7280; }
 .light .text-warn { color: #b45309; }
-.light .text-dim { color: #6b7280 !important; }
-.light .camera-gallery-section, .light .data-block-card { background: #f8fafc; border-color: #e2e6ea; }
-.light .section-front h3 { color: #0e7490; }
-.light .section-back h3 { color: #15803d; }
-.light .gallery-image-wrapper { background: #fff; border-color: #e2e6ea; }
-.light .gallery-image-wrapper h5 { color: #6b7280; }
-.light .gallery-image-wrapper img { background: #f3f4f6; border-color: #e2e6ea; }
+.light .source-card { background: #f8fafc; border-color: #e2e6ea; border-top-color: var(--source-accent); }
+.light .source-front { --source-accent: #0e7490; }
+.light .source-back { --source-accent: #15803d; }
+.light .source-hik { --source-accent: #c2410c; }
+.light .source-admin { --source-accent: #7e22ce; }
+.light .source-card-sub, .light .source-card-time { color: #6b7280; }
+.light .source-fields dt { color: #6b7280; }
+.light .source-fields dd { color: #111827; }
+.light .media-frame { background: #fff; border-color: #e2e6ea; }
+.light .media-frame figcaption { color: #6b7280; }
+.light .media-frame img { background: #f3f4f6; }
 .light .no-img-box { color: #6b7280; border-color: #cbd2d9; }
 .light .media-loader-box { color: #0e7490; }
 .light .http-link-label { color: #7e22ce; }
-.light .data-block-card h4 { color: #c2410c; border-bottom-color: #e2e6ea; }
-.light .sub-header-purple { color: #7e22ce; }
-.light .sub-header-cyan { color: #0e7490; }
-.light .sub-header-green { color: #15803d; }
-.light .sub-header-orange { color: #b45309; }
-.light .telemetry-group { background: #fff; border-color: #e2e6ea; }
-.light .data-row .label { color: #6b7280; }
-.light .data-row .val { color: #111827; }
-.light .highlight-text { color: #0e7490 !important; }
 .light .no-data-msg { color: #6b7280; }
 .light .correction-details { color: #0e7490; }
 .light .source-mini { color: #6b7280; }
