@@ -502,13 +502,15 @@ def update_reconciliation_fields(plate_key, date_str, fields):
 
 SERVER_SAVE_CHECK_DELAY = 45  # seconds after first detection before asking the server about an entry
 
-def summarize_plate_no_reply(res_json, queried_plate):
+def summarize_plate_no_reply(res_json, queried_plate, normal_response):
     """The /plate-no fields shown under Admin Read. The full reply also carries store/billing info we don't need."""
     data = res_json.get("data") if isinstance(res_json.get("data"), dict) else {}
     vehicle_info = res_json.get("vehicle_info") if isinstance(res_json.get("vehicle_info"), dict) else {}
     message = res_json.get("message")
     summary = {
         "queried_plate": queried_plate,
+        # False for message-only replies (already paid, no payment required): the dashboard hides those from Server Read
+        "normal_response": normal_response,
         "checked_at": datetime.now().isoformat(),
         "plate_no": res_json.get("plate_no") or data.get("plate_no"),
         "reference_no": res_json.get("reference_no") or data.get("reference_no"),
@@ -538,7 +540,8 @@ def lookup_plate_on_server(plate):
         res_json = {}
 
     data = res_json.get("data")
-    found = res.status_code == 200 and res_json.get("success") and data
+    normal_response = bool(res.status_code == 200 and res_json.get("success") and data)
+    found = normal_response
     # "No payment required" replies (e.g. the old ENTRY_GRACE) come back as success: false
     # with data.payment_required: false, but the transaction exists.
     # Same rule as noPaymentRequired() in the teller app (src/services/PlateLookup.js).
@@ -549,7 +552,7 @@ def lookup_plate_on_server(plate):
         text = (message if isinstance(message, str) else res.text).lower()
         # Already-paid plates are rejected, but they still exist on the server
         found = any(k in text for k in ["already paid", "payment successful", "enter park"])
-    return summarize_plate_no_reply(res_json, plate) if found else None
+    return summarize_plate_no_reply(res_json, plate, normal_response) if found else None
 
 def check_entry_saved_on_server(plate_key):
     with reconciliation_lock:

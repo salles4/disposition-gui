@@ -315,27 +315,32 @@
 
               <td class="col-cell-ops">
                 <Transition name="cell-fade" mode="out-in">
-                <div v-if="row.server_record" class="source-cell-block">
+                <div v-if="hasNormalServerRecord(row)" class="source-cell-block">
                   <div class="plate-badge badge-admin">{{ row.server_record.plate_no || displayPlate(row.plate_key) }}</div>
                   <div class="nested-type-row">
                     <span class="type-text text-purple">{{ row.server_record.vehicle_type }}</span>
-                    <span v-if="row.server_record.reference_no" class="server-ref-text">{{ row.server_record.reference_no }}</span>
                   </div>
-                  <div class="cell-timestamp text-muted">
-                    <span class="mdi mdi-clock-outline"></span> {{ formatTime(row.server_record.entry || row.server_record.checked_at) }}
+                  <div v-if="isServerEntryStale(row)" class="cell-timestamp server-entry-stale" title="Server entry is more than 24 hours before this detection">
+                    <span class="mdi mdi-alert"></span> Entry {{ formatServerEntry(row) }}
+                  </div>
+                  <div v-else class="cell-timestamp text-muted">
+                    <span class="mdi mdi-clock-outline"></span> Entry {{ formatServerEntry(row) }}
                   </div>
                 </div>
                 <span v-else-if="awaitingServerCheck.has(row.plate_key)" class="text-muted"><span class="mdi mdi-loading mdi-spin"></span> Checking…</span>
                 <span v-else-if="row.server_saved === false" class="text-muted">— Not Found —</span>
+                <span v-else-if="row.server_record" class="text-muted" title="Server replied with a message instead of entry details (see row details)">— No Details —</span>
                 <span v-else class="text-muted">— Not Checked —</span>
                 </Transition>
               </td>
 
               <td class="col-cell-decision" style="vertical-align: middle;">
                 <Transition name="cell-fade" mode="out-in">
-                <span :key="getTicketingDecision(row)" :class="['decision-tag', getTicketingDecision(row).toLowerCase()]">
-                  {{ getTicketingDecision(row) === 'TICKET' ? 'Ticket' : 'Camera' }}
-                </span>
+                <div v-if="getTicketingDecision(row) === 'TICKET'" :key="getTicketShortReason(row)" class="decision-cell" :title="getTicketingRecommendation(row).reason">
+                  <span class="decision-tag ticket">Ticket</span>
+                  <span class="decision-reason">{{ getTicketShortReason(row) }}</span>
+                </div>
+                <span v-else key="none" class="text-muted">—</span>
                 </Transition>
               </td>
 
@@ -533,7 +538,7 @@
                     <span v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending"></span>
                     <span v-else-if="selectedVehicle.server_saved === false" class="mdi mdi-close-circle server-not-found"></span>
                     Server Record (/plate-no)
-                    <span v-if="selectedVehicle.server_record && selectedVehicle.server_record.checked_at" class="source-card-time"><span class="mdi mdi-clock-outline"></span> Checked {{ formatTime(selectedVehicle.server_record.checked_at) }}</span>
+                    <span v-if="selectedVehicle.server_record && selectedVehicle.server_record.entry" :class="['source-card-time', { 'server-entry-stale': isServerEntryStale(selectedVehicle) }]" :title="isServerEntryStale(selectedVehicle) ? 'Server entry is more than 24 hours before this detection' : ''"><span :class="['mdi', isServerEntryStale(selectedVehicle) ? 'mdi-alert' : 'mdi-clock-outline']"></span> Entry {{ formatServerEntry(selectedVehicle) }}</span>
                   </div>
                   <dl v-if="selectedVehicle.server_record" class="source-fields">
                     <div v-for="field in selectedServerRecordFields" :key="field.key" :class="{ 'field-plate': field.key === 'plate_no' }">
@@ -900,7 +905,7 @@ const getTicketingRecommendation = (row) => {
   const plate = displayPlate(row.plate_key) || ''
 const clean = plate.replace(/\s+/g, '').toUpperCase()
 
-if (!clean) return { recommend: true, reason: 'Empty Read' }
+if (!clean) return { recommend: true, reason: 'Empty Read', short: 'Empty read' }
 
 const motorcyclePatterns = [
   /^\d{4}[A-Z]{2}$/,       // Legacy MC - FROM YOUR IMAGE (e.g., 2724SO)
@@ -940,21 +945,21 @@ const carPatterns = [
   if (!isMotorcyclePattern && !isCarPattern) {
     const rowType = getRowVehicleType(row)
     if (rowType === 'MOTORCYCLE') {
-      return { recommend: true, reason: 'Invalid Motorcycle Format (Expected: AB12345, 123ABC, A12C34, A1C234, A1234C, etc.)' }
+      return { recommend: true, reason: 'Invalid Motorcycle Format (Expected: AB12345, 123ABC, A12C34, A1C234, A1234C, etc.)', short: 'Wrong plate format' }
     } else if (rowType === 'CAR') {
-      return { recommend: true, reason: 'Invalid Car Format (Expected: ABC1234, WFU799, SE1234, etc.)' }
+      return { recommend: true, reason: 'Invalid Car Format (Expected: ABC1234, WFU799, SE1234, etc.)', short: 'Wrong plate format' }
     }
-    return { recommend: true, reason: 'Invalid Format' }
+    return { recommend: true, reason: 'Invalid Format', short: 'Wrong plate format' }
   }
 
   const rowType = getRowVehicleType(row)
   
   if (rowType !== 'UNKNOWN') {
     if (isMotorcyclePattern && rowType === 'CAR') {
-      return { recommend: true, reason: 'Type Mismatch (Motorcycle plate on Car)' }
+      return { recommend: true, reason: 'Type Mismatch (Motorcycle plate on Car)', short: 'Type mismatch' }
     }
     if (isCarPattern && rowType === 'MOTORCYCLE') {
-      return { recommend: true, reason: 'Type Mismatch (Car plate on Motorcycle)' }
+      return { recommend: true, reason: 'Type Mismatch (Car plate on Motorcycle)', short: 'Type mismatch' }
     }
   }
 
@@ -963,7 +968,7 @@ const carPatterns = [
   if (bestCamera) {
     const bestConf = parseFloat(row[`${bestCamera}_camera`].confidence) || 0
     if (bestConf < 85) {
-      return { recommend: true, reason: `Low Camera Confidence (${bestConf}%)` }
+      return { recommend: true, reason: `Low Camera Confidence (${bestConf}%)`, short: `Low score (${bestConf}%)` }
     }
   }
 
@@ -977,6 +982,12 @@ const getTicketingDecision = (row) => {
   return getTicketingRecommendation(row).recommend ? 'TICKET' : 'SYSTEM'
 }
 
+// Short label shown under the Ticket tag in the table; manual overrides have no auto reason
+const getTicketShortReason = (row) => {
+  const rec = getTicketingRecommendation(row)
+  return rec.recommend ? rec.short : 'Manual'
+}
+
 const updateTicketingDecision = (row, decision) => {
   row.ticketing_decision = decision
   socket.emit('update_ticketing_decision', {
@@ -988,7 +999,34 @@ const updateTicketingDecision = (row, decision) => {
 
 const getRowDirection = (row) => (row.direction || 'entry').toLowerCase()
 
-// /plate-no fields the backend keeps on the record (server_record), in display order
+// Server Read only shows a normal /plate-no reply; message-only replies (already paid, etc.) stay in the details modal
+// Records saved before the backend sent normal_response: a reply with an entry time and no message/reason was normal
+const hasNormalServerRecord = (row) => {
+  const record = row.server_record
+  if (!record) return false
+  if (record.normal_response !== undefined) return !!record.normal_response
+  return !!record.entry && !record.message && !record.reason
+}
+
+// Server timestamps come as "YYYY-MM-DD HH:MM:SS" (local time)
+const parseServerTime = (value) => new Date(typeof value === 'string' && !value.includes('T') ? value.replace(' ', 'T') : value).getTime()
+
+// An entry this much older than our own detection means the server matched a stale open transaction
+const SERVER_ENTRY_STALE_MS = 24 * 60 * 60 * 1000
+const isServerEntryStale = (row) => {
+  const entry = row.server_record?.entry
+  if (!entry || !row.first_seen) return false
+  return parseServerTime(row.first_seen) - parseServerTime(entry) > SERVER_ENTRY_STALE_MS
+}
+// Time only, unless stale; then the date matters too
+const formatServerEntry = (row) => {
+  const entry = row.server_record?.entry
+  if (!isServerEntryStale(row)) return formatTime(entry)
+  const date = new Date(parseServerTime(entry))
+  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${formatTime(entry)}`
+}
+
+// /plate-no fields the backend keeps on the record (server_record), in display order; entry time sits in the section header
 const SERVER_RECORD_FIELDS = [
   { key: 'plate_no', label: 'Plate' },
   { key: 'reference_no', label: 'Reference No' },
@@ -997,7 +1035,6 @@ const SERVER_RECORD_FIELDS = [
   { key: 'vehicle_type', label: 'Vehicle Type' },
   { key: 'customer_type', label: 'Customer Type' },
   { key: 'gate_id', label: 'Gate', format: (v) => `Gate ${v}` },
-  { key: 'entry', label: 'Entry Time' },
   { key: 'parking_duration', label: 'Parking Duration' },
   { key: 'total_amount', label: 'Total Amount' },
   { key: 'reason', label: 'Reason' },
@@ -1072,9 +1109,9 @@ const kpiFilteredList = computed(() => {
         case 'BACK': return !row.back_camera
         case 'HCP': return !row.hikcentral
         case 'ADMIN': return !row.core_event
-        case 'SERVER': return !row.server_record
+        case 'SERVER': return !hasNormalServerRecord(row)
         // case 'COMPLETE': return row.front_camera && row.back_camera && row.hikcentral && row.core_event
-        case 'COMPLETE': return row.front_camera && row.back_camera && row.hikcentral && row.server_record
+        case 'COMPLETE': return row.front_camera && row.back_camera && row.hikcentral && hasNormalServerRecord(row)
         default: return true
       }
     })
@@ -1635,6 +1672,8 @@ onUnmounted(() => {
   color: #f43f5e;
   border-color: rgba(244, 63, 94, 0.2);
 }
+.decision-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
+.decision-reason { font-size: 0.68rem; color: #9ca3af; white-space: nowrap; }
 
 .row-mismatch { background: rgba(244, 63, 94, 0.015); }
 .row-partial { background: rgba(234, 179, 8, 0.005); }
@@ -2340,8 +2379,10 @@ onUnmounted(() => {
 .modal-title-row .server-check-pending { font-size: 1.1rem; margin-left: 0; }
 .light .server-check-pending { color: #6b7280; }
 .server-not-found { color: #f43f5e; font-size: 0.9rem; }
-.server-ref-text { font-family: monospace; font-size: 0.72rem; color: #888; }
-.light .server-ref-text { color: #6b7280; }
+.server-entry-stale { color: #f43f5e !important; font-weight: 700; }
+.cell-timestamp.server-entry-stale { background: rgba(244, 63, 94, 0.12); border-radius: 4px; padding: 1px 6px; width: fit-content; }
+.light .server-entry-stale { color: #be123c !important; }
+.light .cell-timestamp.server-entry-stale { background: rgba(190, 18, 60, 0.1); }
 .light .server-not-found { color: #be123c; }
 .server-record { border-top: 1px dashed #2a2a2a; padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .server-record-header { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #aaa; }
@@ -2405,6 +2446,7 @@ onUnmounted(() => {
 .light .no-data-row { color: #6b7280; }
 
 .light .text-muted { color: #6b7280; }
+.light .decision-reason { color: #6b7280; }
 .light .text-highlight { color: #0e7490; }
 .light .text-orange { color: #c2410c !important; }
 .light .text-purple { color: #7e22ce !important; }
