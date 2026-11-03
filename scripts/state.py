@@ -446,9 +446,9 @@ init_all_time_stats()
 start_reconciliation_cleanup_thread()
 
 def update_ticketing_decision(plate_key, date_str, decision):
-    return update_reconciliation_field(plate_key, date_str, "ticketing_decision", decision)
+    return update_reconciliation_fields(plate_key, date_str, {"ticketing_decision": decision})
 
-def update_reconciliation_field(plate_key, date_str, field, value):
+def update_reconciliation_fields(plate_key, date_str, fields):
     global daily_reconciliation_history
 
     # Extract date part if full ISO string
@@ -462,16 +462,16 @@ def update_reconciliation_field(plate_key, date_str, field, value):
     updated_record = None
     
     with reconciliation_lock:
-        # Keep the in-flight record in sync too, otherwise its next save would drop the field
+        # Keep the in-flight record in sync too, otherwise its next save would drop the fields
         if plate_key in pending_reconciliations:
-            pending_reconciliations[plate_key][field] = value
+            pending_reconciliations[plate_key].update(fields)
 
         # If the date is today, we can find and update it directly in daily_reconciliation_history
         if date_str == today_str:
             ensure_today_history()
             existing_idx = next((i for i, item in enumerate(daily_reconciliation_history) if item["plate_key"] == plate_key), None)
             if existing_idx is not None:
-                daily_reconciliation_history[existing_idx][field] = value
+                daily_reconciliation_history[existing_idx].update(fields)
                 updated_record = daily_reconciliation_history[existing_idx]
                 
                 # Write to disk
@@ -491,7 +491,7 @@ def update_reconciliation_field(plate_key, date_str, field, value):
                     
                     existing_idx = next((i for i, item in enumerate(records) if item["plate_key"] == plate_key), None)
                     if existing_idx is not None:
-                        records[existing_idx][field] = value
+                        records[existing_idx].update(fields)
                         updated_record = records[existing_idx]
                         
                         write_json_atomic(metadata_file, records)
@@ -502,20 +502,54 @@ def update_reconciliation_field(plate_key, date_str, field, value):
 
 SERVER_SAVE_CHECK_DELAY = 45  # seconds after first detection before asking the server about an entry
 
-def plate_no_has_record(plate):
-    """True when /api/payment/plate-no knows the plate, i.e. the entry was saved on the server."""
+def summarize_plate_no_reply(res_json, queried_plate):
+    """The /plate-no fields shown under Admin Read. The full reply also carries store/billing info we don't need."""
+    data = res_json.get("data") if isinstance(res_json.get("data"), dict) else {}
+    vehicle_info = res_json.get("vehicle_info") if isinstance(res_json.get("vehicle_info"), dict) else {}
+    message = res_json.get("message")
+    summary = {
+        "queried_plate": queried_plate,
+        "checked_at": datetime.now().isoformat(),
+        "plate_no": res_json.get("plate_no") or data.get("plate_no"),
+        "reference_no": res_json.get("reference_no") or data.get("reference_no"),
+        "ticket_no": res_json.get("ticket_no") or data.get("ticket_no"),
+        "transaction_id": data.get("transaction_id"),
+        "vehicle_type": data.get("vehicle_type_name") or vehicle_info.get("vehicle_type"),
+        "customer_type": data.get("customer_type_name"),
+        "gate_id": res_json.get("gate_id"),
+        "entry": res_json.get("entry"),
+        "parking_duration": res_json.get("parking_duration"),
+        "total_amount": data.get("total_amount"),
+        "reason": data.get("reason"),
+        "message": message if isinstance(message, str) else None,
+    }
+    return {k: v for k, v in summary.items() if v not in (None, "")}
+
+def lookup_plate_on_server(plate):
+    """Summary of the /api/payment/plate-no reply when the server knows the plate (the entry was saved), else None."""
     res = requests.post(f"{config.API_BASE_URL}/api/payment/plate-no",
                         json={"licence_plate_no": plate, "terminal": config.TERMINAL_ID},
                         headers=config.HEADERS, timeout=5)
-    if res.status_code == 200:
+    try:
         res_json = res.json()
-        if res_json.get("success") and res_json.get("data"):
-            return True
-        text = (res_json.get("message") or "").lower()
-    else:
-        text = res.text.lower()
-    # Already-paid plates are rejected, but they still exist on the server
-    return any(k in text for k in ["already paid", "payment successful", "enter park"])
+    except ValueError:
+        res_json = {}
+    if not isinstance(res_json, dict):
+        res_json = {}
+
+    data = res_json.get("data")
+    found = res.status_code == 200 and res_json.get("success") and data
+    # "No payment required" replies (e.g. the old ENTRY_GRACE) come back as success: false
+    # with data.payment_required: false, but the transaction exists.
+    # Same rule as noPaymentRequired() in the teller app (src/services/PlateLookup.js).
+    if not found and isinstance(data, dict) and data.get("payment_required") is False:
+        found = True
+    if not found:
+        message = res_json.get("message")
+        text = (message if isinstance(message, str) else res.text).lower()
+        # Already-paid plates are rejected, but they still exist on the server
+        found = any(k in text for k in ["already paid", "payment successful", "enter park"])
+    return summarize_plate_no_reply(res_json, plate) if found else None
 
 def check_entry_saved_on_server(plate_key):
     with reconciliation_lock:
@@ -528,16 +562,19 @@ def check_entry_saved_on_server(plate_key):
     key_plate = plate_key.split('_')[0]
     # The server may store car plates spaced ("ABC 1234"), so try both spellings
     candidates = list(dict.fromkeys([key_plate, format_plate(key_plate)[0]]))
-    saved = False
+    server_record = None
     for plate in candidates:
         try:
-            if plate_no_has_record(plate):
-                saved = True
+            server_record = lookup_plate_on_server(plate)
+            if server_record:
                 break
         except Exception as e:
             print(f"[SERVER SAVE CHECK] {plate}: {e}", flush=True)
 
-    updated_record = update_reconciliation_field(plate_key, first_seen, "server_saved", saved)
+    updated_record = update_reconciliation_fields(plate_key, first_seen, {
+        "server_saved": server_record is not None,
+        "server_record": server_record,
+    })
     if updated_record:
         socketio.emit('reconciled_vehicle_updated', updated_record, to='admin_room')
 

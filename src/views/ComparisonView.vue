@@ -117,7 +117,8 @@
               <option value="FRONT">No Front Camera</option>
               <option value="BACK">No Back Camera</option>
               <option value="HCP">No HikCentral</option>
-              <option value="ADMIN">No Admin Read</option>
+              <!-- <option value="ADMIN">No Admin Read</option> -->
+              <option value="SERVER">No Server Read</option>
               <option value="COMPLETE">All Sources Present</option>
             </select>
           </div>
@@ -194,7 +195,10 @@
               <th class="col-header-front"><span class="mdi mdi-camera"></span> Front Camera</th>
               <th class="col-header-back"><span class="mdi mdi-camera-rear"></span> Back Camera</th>
               <th class="col-header-hik"><span class="mdi mdi-server-network"></span> HikCentral Data</th>
+              <!-- Admin Read column replaced by Server Read (/plate-no lookup)
               <th class="col-header-ops"><span class="mdi mdi-account-shield"></span> Admin Read</th>
+              -->
+              <th class="col-header-ops"><span class="mdi mdi-server"></span> Server Read</th>
               <th class="col-header-decision"><span class="mdi mdi-swap-horizontal-bold"></span> Process</th>
               <!-- Hidden for now: Validation column
               <th style="text-align: center;"><span class="mdi mdi-list-status"></span> Validation</th>
@@ -292,6 +296,7 @@
                 </Transition>
               </td>
 
+              <!-- Admin Read cell, replaced by Server Read below
               <td class="col-cell-ops">
                 <Transition name="cell-fade" mode="out-in">
                 <div v-if="row.core_event" class="source-cell-block">
@@ -304,6 +309,25 @@
                   </div>
                 </div>
                 <span v-else class="text-muted">— Pending —</span>
+                </Transition>
+              </td>
+              -->
+
+              <td class="col-cell-ops">
+                <Transition name="cell-fade" mode="out-in">
+                <div v-if="row.server_record" class="source-cell-block">
+                  <div class="plate-badge badge-admin">{{ row.server_record.plate_no || displayPlate(row.plate_key) }}</div>
+                  <div class="nested-type-row">
+                    <span class="type-text text-purple">{{ row.server_record.vehicle_type }}</span>
+                    <span v-if="row.server_record.reference_no" class="server-ref-text">{{ row.server_record.reference_no }}</span>
+                  </div>
+                  <div class="cell-timestamp text-muted">
+                    <span class="mdi mdi-clock-outline"></span> {{ formatTime(row.server_record.entry || row.server_record.checked_at) }}
+                  </div>
+                </div>
+                <span v-else-if="awaitingServerCheck.has(row.plate_key)" class="text-muted"><span class="mdi mdi-loading mdi-spin"></span> Checking…</span>
+                <span v-else-if="row.server_saved === false" class="text-muted">— Not Found —</span>
+                <span v-else class="text-muted">— Not Checked —</span>
                 </Transition>
               </td>
 
@@ -503,6 +527,24 @@
                   <div><dt>Percentage Factor</dt><dd>{{ selectedVehicle.core_event.percentage ? selectedVehicle.core_event.percentage + '%' : 'N/A' }}</dd></div>
                 </dl>
                 <div v-else class="no-data-msg">No entries logged.</div>
+                <div v-if="getRowDirection(selectedVehicle) === 'entry'" class="server-record">
+                  <div class="server-record-header">
+                    <span v-if="selectedVehicle.server_saved" class="mdi mdi-check-circle server-saved-check"></span>
+                    <span v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending"></span>
+                    <span v-else-if="selectedVehicle.server_saved === false" class="mdi mdi-close-circle server-not-found"></span>
+                    Server Record (/plate-no)
+                    <span v-if="selectedVehicle.server_record && selectedVehicle.server_record.checked_at" class="source-card-time"><span class="mdi mdi-clock-outline"></span> Checked {{ formatTime(selectedVehicle.server_record.checked_at) }}</span>
+                  </div>
+                  <dl v-if="selectedVehicle.server_record" class="source-fields">
+                    <div v-for="field in selectedServerRecordFields" :key="field.key" :class="{ 'field-plate': field.key === 'plate_no' }">
+                      <dt>{{ field.label }}</dt>
+                      <dd :class="{ 'plate-value': field.key === 'plate_no' }">{{ field.value }}</dd>
+                    </div>
+                  </dl>
+                  <div v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="no-data-msg">Checking the server 45s after detection...</div>
+                  <div v-else-if="selectedVehicle.server_saved === false" class="no-data-msg">Not found on server.</div>
+                  <div v-else class="no-data-msg">Not checked.</div>
+                </div>
                 <figure v-if="selectedVehicle.core_event && selectedVehicle.core_event.image_url" class="media-frame">
                   <figcaption><span class="mdi mdi-web"></span> Core System Static HTTP Image Source · HCP Back Image Target Endpoint Link</figcaption>
                   <img :src="selectedVehicle.core_event.image_url" alt="Admin Socket Target HTTP View" />
@@ -946,6 +988,30 @@ const updateTicketingDecision = (row, decision) => {
 
 const getRowDirection = (row) => (row.direction || 'entry').toLowerCase()
 
+// /plate-no fields the backend keeps on the record (server_record), in display order
+const SERVER_RECORD_FIELDS = [
+  { key: 'plate_no', label: 'Plate' },
+  { key: 'reference_no', label: 'Reference No' },
+  { key: 'ticket_no', label: 'Ticket No' },
+  { key: 'transaction_id', label: 'Transaction ID' },
+  { key: 'vehicle_type', label: 'Vehicle Type' },
+  { key: 'customer_type', label: 'Customer Type' },
+  { key: 'gate_id', label: 'Gate', format: (v) => `Gate ${v}` },
+  { key: 'entry', label: 'Entry Time' },
+  { key: 'parking_duration', label: 'Parking Duration' },
+  { key: 'total_amount', label: 'Total Amount' },
+  { key: 'reason', label: 'Reason' },
+  { key: 'message', label: 'Message' },
+  { key: 'queried_plate', label: 'Queried As' },
+]
+const selectedServerRecordFields = computed(() => {
+  const record = selectedVehicle.value?.server_record
+  if (!record) return []
+  return SERVER_RECORD_FIELDS
+    .filter(field => record[field.key] != null && record[field.key] !== '')
+    .map(field => ({ ...field, value: field.format ? field.format(record[field.key]) : record[field.key] }))
+})
+
 // The backend asks /plate-no about each entry 45s after first detection; spin until server_saved lands.
 // Capped so a check lost to a backend restart doesn't spin forever.
 const SERVER_CHECK_WINDOW_MS = 60000
@@ -1006,7 +1072,9 @@ const kpiFilteredList = computed(() => {
         case 'BACK': return !row.back_camera
         case 'HCP': return !row.hikcentral
         case 'ADMIN': return !row.core_event
-        case 'COMPLETE': return row.front_camera && row.back_camera && row.hikcentral && row.core_event
+        case 'SERVER': return !row.server_record
+        // case 'COMPLETE': return row.front_camera && row.back_camera && row.hikcentral && row.core_event
+        case 'COMPLETE': return row.front_camera && row.back_camera && row.hikcentral && row.server_record
         default: return true
       }
     })
@@ -2271,6 +2339,15 @@ onUnmounted(() => {
 .server-check-pending { color: #888; font-size: 0.9rem; margin-left: 4px; vertical-align: middle; }
 .modal-title-row .server-check-pending { font-size: 1.1rem; margin-left: 0; }
 .light .server-check-pending { color: #6b7280; }
+.server-not-found { color: #f43f5e; font-size: 0.9rem; }
+.server-ref-text { font-family: monospace; font-size: 0.72rem; color: #888; }
+.light .server-ref-text { color: #6b7280; }
+.light .server-not-found { color: #be123c; }
+.server-record { border-top: 1px dashed #2a2a2a; padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.server-record-header { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #aaa; }
+.server-record-header .server-saved-check, .server-record-header .server-check-pending { margin-left: 0; }
+.light .server-record { border-top-color: #e2e6ea; }
+.light .server-record-header { color: #374151; }
 .light .page-title { color: #0e7490 !important; }
 .light .btn-launcher { background: #fff; color: #111827; border-color: #cbd2d9; }
 .light .btn-launcher:hover { background: #111827; color: #fff; }
