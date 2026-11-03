@@ -103,10 +103,13 @@
           </div>
 
           <div class="filter-group">
-            <span class="filter-label"><span class="mdi mdi-boom-gate-outline"></span> Gate:</span>
+            <span class="filter-label"><span class="mdi mdi-boom-gate-outline"></span> Terminal:</span>
             <select v-model="selectedGate" class="select-premium">
-              <option value="ALL">All Gates</option>
-              <option v-for="g in availableGates" :key="g" :value="g">{{ g }}</option>
+              <option value="ALL">All Terminals</option>
+              <optgroup v-for="t in terminals" :key="t.id" :label="t.name">
+                <option :value="`T${t.id}`">All of {{ t.name }}</option>
+                <option v-for="g in t.gates" :key="g.id" :value="`G${g.id}`">Gate {{ g.id }} · {{ g.direction === 'exit' ? 'Exit' : 'Entry' }}</option>
+              </optgroup>
             </select>
           </div>
 
@@ -231,8 +234,8 @@
                   <span v-else-if="awaitingServerCheck.has(row.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" title="Waiting to check server (/plate-no)"></span>
                 </div>
                 <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
-                  <span class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
-                    {{ row.gate || 'GATE 1' }}
+                  <span v-if="getRowLocationLabel(row)" class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                    {{ getRowLocationLabel(row) }}
                   </span>
                   <span :class="['badge-sm', (row.direction || 'entry') === 'entry' ? 'badge-dir-entry' : 'badge-dir-exit']" :style="{
                     background: (row.direction || 'entry') === 'entry' ? 'rgba(40,167,69,0.15)' : 'rgba(23,162,184,0.15)',
@@ -348,8 +351,8 @@
                 <template v-if="getRowDirection(row) === 'exit'">
                   <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
                   <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
-                    <span class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
-                      {{ row.gate || 'GATE 1' }}
+                    <span v-if="getRowLocationLabel(row)" class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                      {{ getRowLocationLabel(row) }}
                     </span>
                     <span class="badge-sm badge-dir-exit" style="background: rgba(23,162,184,0.15); color: #00bcd4; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
                       exit
@@ -410,7 +413,7 @@
                 <span class="modal-plate-title">{{ displayPlate(selectedVehicle.plate_key) }}</span>
                 <span v-if="selectedVehicle.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
                 <span v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" title="Waiting to check server (/plate-no)"></span>
-                <span class="modal-chip">{{ selectedVehicle.gate || 'GATE 1' }}</span>
+                <span v-if="getRowLocationLabel(selectedVehicle)" class="modal-chip">{{ getRowLocationLabel(selectedVehicle) }}</span>
                 <span :class="['modal-chip', getRowDirection(selectedVehicle) === 'exit' ? 'chip-exit' : 'chip-entry']">{{ selectedVehicle.direction || 'entry' }}</span>
                 <span class="modal-first-seen"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.first_seen) }}</span>
               </div>
@@ -568,7 +571,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { io } from 'socket.io-client'
 import TokenPrompt from '@/components/TokenPrompt.vue'
 
@@ -643,6 +646,9 @@ const toggleFilters = () => {
 // split_exit_layout = separate Exit plate column; exit_rows_right_aligned = exit rows read from the right (split only)
 const splitExitLayout = ref(true)
 const exitRowsRightAligned = ref(true)
+
+// Configured terminals -> gates (from the dashboard's Terminals & Cameras card); the Terminal filter lists only these
+const terminals = ref([])
 
 // Light mode for readability in bright surroundings (remembered per browser)
 const LIGHT_MODE_KEY = 'comparison_light_mode'
@@ -1064,11 +1070,25 @@ const refreshAwaitingServerCheck = () => {
     awaitingServerCheck.value = new Set(keys)
   }
 }
-const getRowGate = (row) => (row.gate || 'GATE 1').toUpperCase()
+const getRowGateId = (row) => {
+  const id = parseInt(String(row.gate || '').replace(/\D/g, ''), 10)
+  return Number.isNaN(id) ? null : id
+}
 
-const availableGates = computed(() => {
-  const gates = new Set(comparisonList.value.map(getRowGate))
-  return [...gates].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+// e.g. "Terminal 1 · GATE 2"; rows saved before terminals existed only have their old gate, rows without either show nothing
+const getRowLocationLabel = (row) => {
+  if (row.terminal_name) return row.gate ? `${row.terminal_name} · ${row.gate}` : row.terminal_name
+  return row.gate || ''
+}
+
+// Drop a Terminal filter whose terminal or gate was removed from the config
+watch(terminals, (list) => {
+  if (selectedGate.value === 'ALL') return
+  const id = Number(selectedGate.value.slice(1))
+  const exists = selectedGate.value.startsWith('T')
+    ? list.some(t => t.id === id)
+    : list.some(t => (t.gates || []).some(g => g.id === id))
+  if (!exists) selectedGate.value = 'ALL'
 })
 
 const kpiFilteredList = computed(() => {
@@ -1093,12 +1113,14 @@ const kpiFilteredList = computed(() => {
     })
   }
 
-  // 0b. Filter by Direction / Gate (rows without a value are shown as GATE 1 / entry)
+  // 0b. Filter by Direction / Terminal (rows without a direction count as entry; rows without a terminal only show under All)
   if (selectedDirection.value !== 'ALL') {
     list = list.filter(row => getRowDirection(row) === selectedDirection.value)
   }
   if (selectedGate.value !== 'ALL') {
-    list = list.filter(row => getRowGate(row) === selectedGate.value)
+    const id = Number(selectedGate.value.slice(1))
+    const byTerminal = selectedGate.value.startsWith('T')
+    list = list.filter(row => row.terminal_id != null && (byTerminal ? row.terminal_id === id : getRowGateId(row) === id))
   }
 
   // 0c. Filter by missing source
@@ -1486,6 +1508,7 @@ onMounted(() => {
     splitExitLayout.value = cfg.split_exit_layout !== false
     exitRowsRightAligned.value = cfg.exit_rows_right_aligned !== false
     servers.value = cfg.servers || {}
+    terminals.value = cfg.terminals || []
   })
 
   socket.on('all_time_reconciliation_stats_response', (statsData) => {

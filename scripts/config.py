@@ -53,7 +53,8 @@ GLOBAL_CONFIG = {
     "real_device_payment": False,
     "teller_process_delay_seconds": 2,
     "teller_cooldown_seconds": 3,
-    "camera_mapping": {},
+    # LPR cameras: terminals -> gates (entry/exit) -> front/back camera IPs. Edited on the dashboard.
+    "terminals": [],
     # Disposition table: separate Exit plate column, optionally with exit rows right-aligned
     "split_exit_layout": True,
     "exit_rows_right_aligned": True,
@@ -84,6 +85,75 @@ def migrate_legacy_config():
     except Exception as e:
         print(f"[CONFIG] Could not copy existing settings from {LEGACY_CONFIG_FILE}: {e}", flush=True)
 
+def migrate_camera_mapping():
+    """
+    Older configs keep a flat {ip: {gate, direction, camera}} camera_mapping, where one "gate"
+    number covered both its entry and exit lanes. Each old gate becomes a terminal, and each of
+    its directions a gate under it (gate ids numbered in order). The converted layout is written
+    out on the next dashboard save.
+    """
+    old_mapping = GLOBAL_CONFIG.pop("camera_mapping", None)
+    if not old_mapping or GLOBAL_CONFIG.get("terminals"):
+        return
+    terminals = {}
+    for ip, info in old_mapping.items():
+        terminal_id = int(info.get("gate", 1))
+        direction = info.get("direction", "entry")
+        terminal = terminals.setdefault(terminal_id, {"id": terminal_id, "name": f"Terminal {terminal_id}", "gates": {}})
+        gate = terminal["gates"].setdefault(direction, {"direction": direction, "cameras": {}})
+        gate["cameras"][info.get("camera", "front")] = ip
+    next_gate_id = 1
+    result = []
+    for terminal_id in sorted(terminals):
+        terminal = terminals[terminal_id]
+        gates = []
+        for direction in sorted(terminal["gates"]):  # entry before exit
+            gates.append({"id": next_gate_id, **terminal["gates"][direction]})
+            next_gate_id += 1
+        result.append({**terminal, "gates": gates})
+    GLOBAL_CONFIG["terminals"] = result
+    print(f"[CONFIG] Converted camera_mapping into {len(result)} terminal(s).", flush=True)
+
+def sanitize_terminals(raw):
+    """Keep only well-formed terminals/gates/cameras from a dashboard save."""
+    terminals = []
+    for t in raw or []:
+        try:
+            terminal_id = int(t["id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        gates = []
+        for g in t.get("gates") or []:
+            try:
+                gate_id = int(g["id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            cameras = {
+                role: str(ip).strip()
+                for role, ip in (g.get("cameras") or {}).items()
+                if role in ("front", "back") and ip and str(ip).strip()
+            }
+            direction = g.get("direction") if g.get("direction") in ("entry", "exit") else "entry"
+            gates.append({"id": gate_id, "direction": direction, "cameras": cameras})
+        name = str(t.get("name") or "").strip() or f"Terminal {terminal_id}"
+        terminals.append({"id": terminal_id, "name": name, "gates": gates})
+    return terminals
+
+def find_camera(ip):
+    """Where a camera IP is installed: terminal, gate, direction and front/back role, or None if unregistered."""
+    for terminal in GLOBAL_CONFIG.get("terminals", []):
+        for gate in terminal.get("gates", []):
+            for role, cam_ip in (gate.get("cameras") or {}).items():
+                if cam_ip == ip:
+                    return {
+                        "terminal_id": terminal["id"],
+                        "terminal_name": terminal.get("name") or f"Terminal {terminal['id']}",
+                        "gate_id": gate["id"],
+                        "direction": gate.get("direction", "entry"),
+                        "camera": role,
+                    }
+    return None
+
 def get_servers():
     return GLOBAL_CONFIG["servers"]
 
@@ -107,6 +177,7 @@ def load_config(log_callback=None):
                 loaded_servers = loaded.pop("servers", None) or {}
                 GLOBAL_CONFIG.update(loaded)
                 GLOBAL_CONFIG["servers"].update(loaded_servers)
+                migrate_camera_mapping()
                 if log_callback:
                     log_callback(f"Simulation configuration loaded from {CONFIG_FILE}", "SYSTEM")
         except Exception as e:

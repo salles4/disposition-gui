@@ -30,7 +30,7 @@ scheduled_exits = []
 
 connected_terminals = {}
 
-# LPR cameras that posted detections but are not in camera_mapping yet
+# LPR cameras that posted detections but are not under any terminal gate yet
 # {ip: {"ip", "mac", "channel_name", "last_plate", "last_seen", "hits"}}
 unregistered_cameras = {}
 
@@ -825,6 +825,9 @@ def process_and_buffer_bundle(sources):
                     "plate_image": data.get("plateImage"),      
                     "vehicle_image": data.get("vehicleImage")
                 }
+                if data.get("terminal_id"):
+                    record["terminal_id"] = data.get("terminal_id")
+                    record["terminal_name"] = data.get("terminal_name")
                 if data.get("gate_id"):
                     record["gate"] = f"GATE {data.get('gate_id')}"
                 if data.get("direction"):
@@ -840,6 +843,9 @@ def process_and_buffer_bundle(sources):
                     "plate_image": data.get("plateImage"),
                     "vehicle_image": data.get("vehicleImage")
                 }
+                if data.get("terminal_id"):
+                    record["terminal_id"] = data.get("terminal_id")
+                    record["terminal_name"] = data.get("terminal_name")
                 if data.get("gate_id"):
                     record["gate"] = f"GATE {data.get('gate_id')}"
                 if data.get("direction"):

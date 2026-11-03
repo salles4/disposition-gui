@@ -11,7 +11,7 @@ from flask import send_from_directory, request
 from flask_socketio import join_room
 
 from scripts.app_context import app, socketio
-from scripts.config import GLOBAL_CONFIG, load_config, save_config
+from scripts.config import GLOBAL_CONFIG, load_config, save_config, sanitize_terminals, find_camera
 from scripts.state import (
     queue_lock, connected_terminals, sim_stats, logs_history,
     pending_reconciliations, reconciliation_lock, process_and_buffer_data,
@@ -284,16 +284,23 @@ def handle_update_config(data):
         GLOBAL_CONFIG['split_exit_layout'] = bool(data['split_exit_layout'])
     if 'exit_rows_right_aligned' in data:
         GLOBAL_CONFIG['exit_rows_right_aligned'] = bool(data['exit_rows_right_aligned'])
-    if 'camera_mapping' in data:
-        GLOBAL_CONFIG['camera_mapping'] = data['camera_mapping']
-        for ip in list(unregistered_cameras):
-            if ip in GLOBAL_CONFIG['camera_mapping']:
-                unregistered_cameras.pop(ip, None)
+
+    save_config(log_event)
+    socketio.emit('config_sync', GLOBAL_CONFIG, to='admin_room')
+    log_event(f"Config Updated.", "ADMIN")
+
+# Separate from admin_update_config, which resets any setting it isn't sent
+@socketio.on('admin_update_terminals')
+def handle_update_terminals(data):
+    GLOBAL_CONFIG['terminals'] = sanitize_terminals(data.get('terminals'))
+    for ip in list(unregistered_cameras):
+        if find_camera(ip):
+            unregistered_cameras.pop(ip, None)
 
     save_config(log_event)
     socketio.emit('config_sync', GLOBAL_CONFIG, to='admin_room')
     emit_unregistered_cameras()
-    log_event(f"Config Updated.", "ADMIN")
+    log_event(f"Camera terminals updated.", "ADMIN")
 
 def _parse_port(value):
     try:
@@ -523,20 +530,20 @@ def analyze_camera_payload(payload_package):
                 "timestamp": datetime.now().isoformat()
             }
             
-            mapping = GLOBAL_CONFIG.get("camera_mapping", {})
-            if ip_address in mapping:
-                cam_info = mapping[ip_address]
-                gate_id = cam_info.get("gate", 1)
-                direction = cam_info.get("direction", "entry")
-                camera_role = cam_info.get("camera", "front")
-                
-                # Enrich camera_data with gate and direction info
+            cam_info = find_camera(ip_address)
+            if cam_info:
+                gate_id = cam_info["gate_id"]
+                direction = cam_info["direction"]
+                camera_role = cam_info["camera"]
+
+                # Enrich camera_data with terminal, gate and direction info
+                camera_data["terminal_id"] = cam_info["terminal_id"]
+                camera_data["terminal_name"] = cam_info["terminal_name"]
                 camera_data["gate_id"] = gate_id
                 camera_data["direction"] = direction
-                
+
                 source_type = "FRONT_CAM" if camera_role == "front" else "BACK_CAM"
-                cam_label = cam_info.get("name") or ip_address
-                # print(f"[CAMERA BUFFERED] {cam_label} -> {source_type} (Gate: {gate_id}, Direction: {direction})", flush=True)
+                # print(f"[CAMERA BUFFERED] {ip_address} -> {source_type} ({cam_info['terminal_name']} Gate: {gate_id}, Direction: {direction})", flush=True)
                 process_and_buffer_data(source_type, camera_data)
             else:
                 if ip_address not in unregistered_cameras:

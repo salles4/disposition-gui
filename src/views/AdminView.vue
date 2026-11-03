@@ -42,128 +42,12 @@
 
         <ServerSettings :socket="socket" :servers="servers" />
 
-        <!-- LPR Dynamic Camera Mapping Configuration Card -->
-        <div class="live-actions-card camera-mapping-card" style="margin-top: 0px;">
-          <h2>
-            <span class="mdi mdi-ip-network" style="color: #00bcd4;"></span>
-            LPR Camera Mappings
-          </h2>
-          <p class="card-subtitle">Map IP cameras to gates and roles dynamically for multi-gate configuration.</p>
-
-          <!-- Cameras sending detections that are not mapped yet -->
-          <div v-if="unregisteredCameras.length" class="unregistered-panel">
-            <div class="unregistered-title">
-              <span class="mdi mdi-alert-outline"></span>
-              Detected but not registered ({{ unregisteredCameras.length }})
-            </div>
-            <p class="unregistered-hint">These cameras are sending plates that are being ignored. Register them to start using their reads.</p>
-            <div v-for="cam in unregisteredCameras" :key="cam.ip" class="unregistered-row">
-              <div class="unregistered-info">
-                <span class="unregistered-ip">{{ cam.ip }}</span>
-                <span class="unregistered-meta">
-                  Last plate <strong>{{ cam.last_plate }}</strong> · {{ formatSeen(cam.last_seen) }} · {{ cam.hits }} read{{ cam.hits === 1 ? '' : 's' }}
-                  <template v-if="cam.mac"> · MAC {{ cam.mac }}</template>
-                </span>
-              </div>
-              <button class="btn-register" @click="startRegister(cam.ip)">
-                <span class="mdi mdi-plus"></span> Register
-              </button>
-              <button class="btn-dismiss" title="Dismiss" @click="dismissUnregistered(cam.ip)">
-                <span class="mdi mdi-close"></span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Add Camera Mapping Form Inline -->
-          <div class="mapping-form" :class="{ 'mapping-form-editing': editingIp }" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 6px; border: 1px solid #2a2a2a;">
-            <div v-if="editingIp" class="editing-banner">
-              <span><span class="mdi mdi-pencil"></span> Editing {{ editingIp }}</span>
-              <button class="btn-cancel-edit" @click="resetMappingForm">Cancel</button>
-            </div>
-            <div class="sub-form-group">
-              <label>Camera Name (optional):</label>
-              <input ref="nameInput" type="text" v-model="addMappingForm.name" :placeholder="autoCameraLabel(addMappingForm)" class="compact-input" style="height: 38px; padding: 8px 10px; background: #000; border: 1px solid #333; color: #fff; border-radius: 4px; font-size: 0.85rem; width: 100%; box-sizing: border-box;">
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-              <div class="sub-form-group">
-                <label>Camera IP Address:</label>
-                <input type="text" v-model="addMappingForm.ip" placeholder="e.g. 192.168.0.66" class="compact-input" style="height: 38px; padding: 8px 10px; background: #000; border: 1px solid #333; color: #fff; border-radius: 4px; font-size: 0.85rem; width: 100%; box-sizing: border-box;">
-              </div>
-              <div class="sub-form-group">
-                <label>Gate Number:</label>
-                <input type="number" v-model.number="addMappingForm.gate" min="1" class="compact-input" style="height: 38px; padding: 8px 10px; background: #000; border: 1px solid #333; color: #fff; border-radius: 4px; font-size: 0.85rem; width: 100%; box-sizing: border-box;">
-              </div>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-              <div class="sub-form-group">
-                <label>Direction:</label>
-                <select v-model="addMappingForm.direction" class="compact-input" style="height: 38px; padding: 8px 10px; background: #000; border: 1px solid #333; color: #fff; border-radius: 4px; font-size: 0.85rem; width: 100%; box-sizing: border-box; cursor: pointer;">
-                  <option value="entry">Entry Gate</option>
-                  <option value="exit">Exit Gate</option>
-                </select>
-              </div>
-              <div class="sub-form-group">
-                <label>Camera Role:</label>
-                <select v-model="addMappingForm.camera" class="compact-input" style="height: 38px; padding: 8px 10px; background: #000; border: 1px solid #333; color: #fff; border-radius: 4px; font-size: 0.85rem; width: 100%; box-sizing: border-box; cursor: pointer;">
-                  <option value="front">Front Camera</option>
-                  <option value="back">Back Camera</option>
-                </select>
-              </div>
-            </div>
-            
-            <button class="btn btn-premium btn-premium-sync w-100" @click="addCameraMapping" style="height: 38px; margin-top: 5px; background: #00bcd4; color: #000; box-shadow: 0 4px 10px rgba(0, 188, 212, 0.2); font-weight: bold; border-radius: 6px; cursor: pointer; border: none; display: flex; align-items: center; justify-content: center; gap: 6px;">
-              <span :class="['mdi', editingIp ? 'mdi-content-save' : 'mdi-plus-circle']"></span> {{ editingIp ? 'Save Camera' : 'Add Camera IP' }}
-            </button>
-          </div>
-          
-          <!-- Mappings List Table -->
-          <div class="mappings-list" style="max-height: 320px; overflow-y: auto;">
-            <div v-if="Object.keys(cameraMapping).length === 0" style="text-align: center; color: #666; padding: 20px; font-size: 0.9rem;">
-              No cameras mapped yet. Click add to register one.
-            </div>
-            <table v-else style="width: 100%; border-collapse: collapse; font-size: 0.825rem; text-align: left;">
-              <thead>
-                <tr style="border-bottom: 1px solid #333; color: #888;">
-                  <th style="padding: 6px;">Camera</th>
-                  <th style="padding: 6px;">Gate Info</th>
-                  <th style="padding: 6px;">Role</th>
-                  <th style="padding: 6px; text-align: right;">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="[ip, info] in sortedMappings" :key="ip" :class="{ 'mapping-row-editing': editingIp === ip }" style="border-bottom: 1px solid #222; color: #eee;">
-                  <td style="padding: 8px 6px;">
-                    <div class="mapping-name">{{ info.name || autoCameraLabel(info) }}</div>
-                    <div class="mapping-ip">{{ ip }}</div>
-                  </td>
-                  <td style="padding: 8px 6px;">
-                    <span style="background: rgba(255,255,255,0.06); padding: 2px 5px; border-radius: 3px; font-weight: bold;">Gate {{ info.gate }}</span>
-                    <span :style="{
-                      background: info.direction === 'entry' ? 'rgba(40,167,69,0.1)' : 'rgba(23,162,184,0.1)',
-                      color: info.direction === 'entry' ? '#28a745' : '#17a2b8',
-                      marginLeft: '4px',
-                      padding: '2px 5px',
-                      borderRadius: '3px',
-                      fontSize: '0.725rem',
-                      fontWeight: 'bold',
-                      textTransform: 'uppercase'
-                    }">{{ info.direction }}</span>
-                  </td>
-                  <td style="padding: 8px 6px; text-transform: capitalize;">{{ info.camera }}</td>
-                  <td style="padding: 8px 6px; text-align: right; white-space: nowrap;">
-                    <button @click="startEdit(ip)" title="Edit" style="background: none; border: none; color: #00bcd4; cursor: pointer; font-size: 1rem; padding: 2px 4px;">
-                      <span class="mdi mdi-pencil-outline"></span>
-                    </button>
-                    <button @click="removeCameraMapping(ip)" title="Remove" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 1rem; padding: 2px 4px;">
-                      <span class="mdi mdi-delete-outline"></span>
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <TerminalSettings
+          :socket="socket"
+          :terminals="terminals"
+          :unregistered-cameras="unregisteredCameras"
+          @notify="showToast"
+        />
         
         <div class="live-actions-card">
           <div class="card-header-with-status">
@@ -237,6 +121,7 @@ import TellerStatus from '@/components/TellerStatus.vue'
 import SimulationSettings from '@/components/SimulationSettings.vue'
 import ServerSettings from '@/components/ServerSettings.vue'
 import ApiMetrics from '@/components/ApiMetrics.vue'
+import TerminalSettings from '@/components/TerminalSettings.vue'
 
 const socket = io(import.meta.env.DEV ? `http://${window.location.hostname}:${import.meta.env.VITE_WS_PORT || '5015'}` : window.location.origin)
 
@@ -262,112 +147,8 @@ const registerTerminal = () => {
 const stats = reactive({ queued: 0, parked: 0, paid: 0, exited: 0 })
 const config = reactive({ pay_delay_seconds: 60, exit_delay_seconds: 20, camera_auto_exit_only: true, real_device_payment: false, enable_automatic_payment: true, teller_process_delay_seconds: 2, teller_cooldown_seconds: 3, split_exit_layout: true, exit_rows_right_aligned: true })
 
-const cameraMapping = ref({})
+const terminals = ref([])
 const unregisteredCameras = ref([])
-const editingIp = ref(null)
-const nameInput = ref(null)
-const addMappingForm = reactive({
-  ip: '',
-  name: '',
-  gate: 1,
-  direction: 'entry',
-  camera: 'front'
-})
-
-const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
-
-// Readable fallback label, e.g. "Gate 2 Exit Back"
-const autoCameraLabel = (info) => `Gate ${info.gate} ${capitalize(info.direction)} ${capitalize(info.camera)}`
-
-// Group mappings by gate, then entry before exit, then front before back
-const sortedMappings = computed(() => {
-  return Object.entries(cameraMapping.value).sort(([, a], [, b]) => {
-    return (a.gate - b.gate) || (a.direction || '').localeCompare(b.direction || '') || (b.camera || '').localeCompare(a.camera || '')
-  })
-})
-
-const resetMappingForm = () => {
-  editingIp.value = null
-  addMappingForm.ip = ''
-  addMappingForm.name = ''
-}
-
-const focusNameInput = () => {
-  nameInput.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  nameInput.value?.focus()
-}
-
-const startRegister = (ip) => {
-  resetMappingForm()
-  addMappingForm.ip = ip
-  focusNameInput()
-}
-
-const startEdit = (ip) => {
-  const info = cameraMapping.value[ip]
-  editingIp.value = ip
-  addMappingForm.ip = ip
-  addMappingForm.name = info.name || ''
-  addMappingForm.gate = info.gate
-  addMappingForm.direction = info.direction
-  addMappingForm.camera = info.camera
-  focusNameInput()
-}
-
-const dismissUnregistered = (ip) => {
-  socket.emit('dismiss_unregistered_camera', { ip })
-}
-
-const formatSeen = (iso) => {
-  if (!iso) return '—'
-  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000))
-  if (secs < 60) return `${secs}s ago`
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
-  return new Date(iso).toLocaleTimeString()
-}
-
-const addCameraMapping = () => {
-  const ip = addMappingForm.ip.trim()
-  if (!ip) {
-    showToast('IP address cannot be empty.')
-    return
-  }
-  const ipPattern = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/
-  if (!ipPattern.test(ip)) {
-    showToast('Invalid IP address format.')
-    return
-  }
-  if (cameraMapping.value[ip] && ip !== editingIp.value) {
-    showToast(`IP address ${ip} is already mapped.`)
-    return
-  }
-  if (editingIp.value && editingIp.value !== ip) {
-    delete cameraMapping.value[editingIp.value]
-  }
-  const entry = {
-    gate: addMappingForm.gate,
-    direction: addMappingForm.direction,
-    camera: addMappingForm.camera
-  }
-  const name = addMappingForm.name.trim()
-  if (name) entry.name = name
-  cameraMapping.value[ip] = entry
-
-  const wasEditing = editingIp.value
-  saveTimers()
-  showToast(wasEditing ? `Updated camera ${name || ip}.` : `Successfully added camera mapping for IP ${ip}!`)
-  resetMappingForm()
-}
-
-const removeCameraMapping = (ip) => {
-  const label = cameraMapping.value[ip]?.name || ip
-  if (confirm(`Are you sure you want to remove mapping for ${label}?`)) {
-    delete cameraMapping.value[ip]
-    if (editingIp.value === ip) resetMappingForm()
-    saveTimers()
-    showToast(`Successfully removed camera mapping for ${label}.`)
-  }
-}
 
 const toast = ref('')
 const logs = ref([])
@@ -390,8 +171,7 @@ const saveTimers = () => {
     teller_process_delay: config.teller_process_delay_seconds,
     teller_cooldown: config.teller_cooldown_seconds,
     split_exit_layout: config.split_exit_layout,
-    exit_rows_right_aligned: config.exit_rows_right_aligned,
-    camera_mapping: cameraMapping.value
+    exit_rows_right_aligned: config.exit_rows_right_aligned
   })
   showToast('Settings successfully synced globally.')
 }
@@ -464,7 +244,7 @@ onMounted(() => {
     config.split_exit_layout = newConfig.split_exit_layout !== false
     config.exit_rows_right_aligned = newConfig.exit_rows_right_aligned !== false
     servers.value = newConfig.servers || {}
-    cameraMapping.value = newConfig.camera_mapping || {}
+    terminals.value = newConfig.terminals || []
   })
 
   socket.on('stats_update', (newStats) => {
@@ -527,29 +307,6 @@ onUnmounted(() => {
 
 <style scoped>
 .admin-container { flex: 1; background-color: #111; padding: 40px; color: white; overflow-y: auto; height: 100%; box-sizing: border-box;}
-
-/* Unregistered camera alerts */
-.unregistered-panel { margin-bottom: 16px; padding: 12px; border-radius: 6px; border: 1px solid rgba(255, 193, 7, 0.35); background: rgba(255, 193, 7, 0.06); }
-.unregistered-title { color: #ffc107; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
-.unregistered-hint { color: #999; font-size: 0.78rem; margin: 4px 0 10px; }
-.unregistered-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid rgba(255, 193, 7, 0.15); }
-.unregistered-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.unregistered-ip { font-family: monospace; font-size: 0.9rem; color: #fff; }
-.unregistered-meta { font-size: 0.75rem; color: #aaa; overflow-wrap: anywhere; }
-.unregistered-meta strong { color: #ffc107; font-family: monospace; }
-.btn-register { background: #ffc107; color: #000; border: none; border-radius: 4px; padding: 6px 10px; font-weight: bold; font-size: 0.8rem; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.btn-register:hover { background: #ffcd38; }
-.btn-dismiss { background: none; border: none; color: #888; cursor: pointer; font-size: 1rem; padding: 2px 4px; }
-.btn-dismiss:hover { color: #fff; }
-
-/* Camera mapping names & editing */
-.mapping-name { font-weight: bold; color: #eee; }
-.mapping-ip { font-family: monospace; font-size: 0.75rem; color: #888; margin-top: 2px; }
-.mapping-row-editing { background: rgba(0, 188, 212, 0.08); }
-.mapping-form-editing { border-color: rgba(0, 188, 212, 0.5) !important; }
-.editing-banner { display: flex; justify-content: space-between; align-items: center; color: #00bcd4; font-size: 0.85rem; font-weight: bold; }
-.btn-cancel-edit { background: none; border: 1px solid #444; color: #ccc; border-radius: 4px; padding: 3px 10px; font-size: 0.78rem; cursor: pointer; }
-.btn-cancel-edit:hover { border-color: #888; color: #fff; }
 
 .admin-header-row {
   display: flex;
