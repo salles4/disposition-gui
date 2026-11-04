@@ -1,6 +1,10 @@
 import os
+import sys
 import json
 from datetime import datetime
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from scripts.disposition import decide_disposition
 
 # Path allocation configuration
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs")
@@ -42,26 +46,6 @@ def repair_today_json_matrix():
     print(f"Scanning {len(records)} records for retroactive matrix re-calculation...")
     repaired_count = 0
 
-    # FIXED TRUTH TABLE CONFIGURATION MATRIX
-    truth_table = {
-        (0, 0, 0, 0): "NA", 
-        (0, 0, 0, 1): "Ticket", 
-        (0, 0, 1, 0): "Car LP", 
-        (0, 0, 1, 1): "Motor LP",
-        (0, 1, 0, 0): "Ticket", 
-        (0, 1, 0, 1): "Ticket", 
-        (0, 1, 1, 0): "Ticket", 
-        (0, 1, 1, 1): "Motor LP",
-        (1, 0, 0, 0): "Car LP",    # Fixed Line 9
-        (1, 0, 0, 1): "Car LP",
-        (1, 0, 1, 0): "Car LP",
-        (1, 0, 1, 1): "Car LP",
-        (1, 1, 0, 0): "NA",        # Fixed Line 13 from "Car LP" to "NA"
-        (1, 1, 0, 1): "NA",
-        (1, 1, 1, 0): "NA",
-        (1, 1, 1, 1): "NA"
-    }
-
     for row in records:
         # Re-evaluate Front Camera
         if row.get("front_camera"):
@@ -75,22 +59,17 @@ def repair_today_json_matrix():
         if row.get("hikcentral"):
             row["hikcentral"]["vehicleType"] = normalize_camera_vehicle_type(row["hikcentral"].get("raw_type_received"))
 
-        # Re-calculate binary states
-        flp = 1 if (row.get("front_camera") and row["front_camera"].get("plate")) else 0
-        fvt = 1 if (row.get("front_camera") and row["front_camera"].get("vehicle_type") == "MOTORCYCLE") else 0
-        blp = 1 if (row.get("back_camera") and row["back_camera"].get("plate")) else 0
-        bvt = 1 if (row.get("back_camera") and row["back_camera"].get("vehicle_type") == "MOTORCYCLE") else 0
-
-        new_dispo = truth_table.get((flp, fvt, blp, bvt), "NA")
-        if row.get("disposition") != new_dispo:
-            row["disposition"] = new_dispo
+        # Re-calculate the decision
+        decision = decide_disposition(row)
+        if any(row.get(k) != v for k, v in decision.items()):
+            row.update(decision)
             repaired_count += 1
 
     # Overwrite repaired JSON array back to file
     with open(target_file, "w", encoding="utf-8") as f:
         json.dump(records, f, indent=4, ensure_ascii=False)
 
-    print(f"Success! Re-calculated matrix execution. Corrected {repaired_count} entries to match the whiteboard.")
+    print(f"Success! Re-calculated matrix execution. Corrected {repaired_count} entries to match the flowchart.")
 
 if __name__ == "__main__":
     repair_today_json_matrix()

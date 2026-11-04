@@ -6,7 +6,7 @@ import threading
 import websocket
 from datetime import datetime
 
-from scripts.state import process_and_buffer_bundle
+from scripts.state import process_and_buffer_bundle, apply_barrier_open
 
 from scripts.app_context import socketio
 import base64
@@ -225,6 +225,9 @@ def on_ws_message(ws, message):
 
         elif data.get("event") == "disposition" and data.get("action") == "disposition":
             payload = data.get("payload", {})
+            if payload.get("barrier"):
+                threading.Thread(target=apply_barrier_open, args=(payload["barrier"],), daemon=True).start()
+
             hcp_payload = payload.get("hcp", {})
             events = hcp_payload.get("events", [])
             guid = hcp_payload.get("guid", "")

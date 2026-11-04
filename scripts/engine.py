@@ -524,7 +524,8 @@ def analyze_camera_payload(payload_package):
             camera_data = {
                 "plate": plate.strip().upper(),
                 "vehicleType": v_type,
-                "confidence": int(confidence) if confidence else 100,
+                # Missing stays None so it counts as a low score, not a perfect one
+                "confidence": int(confidence) if confidence else None,
                 "plateImage": base64_plate_img,   # Smaller text snippet
                 "vehicleImage": base64_scene_img, # Big structural scene frame
                 "timestamp": datetime.now().isoformat()
@@ -566,7 +567,7 @@ def camera_webhook_receiver():
     try:
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         content_type = request.content_type.lower() if request.content_type else ""
-        # print(f"\n[CAMERA WEBHOOK EVENT RECEIVED] From IP: {client_ip} | Content-Type: {content_type}", flush=True)
+        print(f"\n[CAMERA WEBHOOK EVENT RECEIVED] Port: {request.environ.get('SERVER_PORT')} | From IP: {client_ip} | Content-Type: {content_type}", flush=True)
 
         if "multipart/form-data" in content_type:
             extracted_files = {}
@@ -577,9 +578,12 @@ def camera_webhook_receiver():
                 if (filename and filename.endswith('.xml')) or ('xml' in (file_obj.content_type or '')):
                     xml_str = raw_bytes.decode('utf-8', errors='ignore')
                     extracted_files[file_key] = {"filename": filename, "type": "XML", "data": xml_str}
-                    # print(f"--- [CAMERA XML PAYLOAD: {filename}] ---", flush=True)
-                    # print(xml_str, flush=True)
-                    # print("------------------------------------------", flush=True)
+                    try:
+                        print(f"--- [CAMERA XML PAYLOAD: {filename}] ---", flush=True)
+                        print(xml_str, flush=True)
+                        print("------------------------------------------", flush=True)
+                    except Exception:
+                        pass  # A console that can't encode the XML must not lose the camera event
                     try:
                         save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "last_camera_event.xml")
                         with open(save_path, "w", encoding="utf-8") as xf:
@@ -587,16 +591,16 @@ def camera_webhook_receiver():
                     except Exception:
                         pass
                 else:
-                    # byte_len = len(raw_bytes)
+                    byte_len = len(raw_bytes)
                     extracted_files[file_key] = {"filename": filename, "type": "IMAGE", "data": raw_bytes}
-                    # print(f"[CAMERA ATTACHMENT: {filename or file_key}] Size: {byte_len} bytes", flush=True)
+                    print(f"[CAMERA ATTACHMENT: {filename or file_key}] Size: {byte_len} bytes", flush=True)
 
             threading.Thread(target=analyze_camera_payload, args=({"type": "MULTIPART", "files": extracted_files},), daemon=True).start()
             return {"success": True, "message": "Multipart camera buffers streamed successfully"}, 200
 
         # Non-multipart payloads (JSON / raw XML fallback inspection)
         raw_data = request.get_data(as_text=True)
-        # print(f"[CAMERA NON-MULTIPART BODY]\n{raw_data[:2000]}", flush=True)
+        print(f"[CAMERA NON-MULTIPART BODY]\n{raw_data[:2000]}", flush=True)
         return {"success": False, "error": "Unsupported media type payload structure"}, 400
     except Exception as e:
         print(f"[CAMERA WEBHOOK ERROR] {e}", flush=True)

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from scripts.app_context import socketio
 import scripts.config as config
 from scripts.utils import ADMIN_CAR_CODES, ADMIN_MOTORCYCLE_CODES, format_plate
+from scripts.disposition import decide_disposition
 
 
 def write_json_atomic(path, data):
@@ -243,28 +244,11 @@ def get_record_stats_category(r):
     if not r.get("core_event") and not r.get("hikcentral"):
         return "partial"
 
-    # Get chosen camera plate and type based on confidence
-    cam_plate = None
-    cam_type = None
-    
-    f_cam = r.get("front_camera")
-    b_cam = r.get("back_camera")
-    
-    if f_cam and b_cam:
-        f_conf = float(f_cam.get("confidence", 0) or 0)
-        b_conf = float(b_cam.get("confidence", 0) or 0)
-        if f_conf >= b_conf:
-            cam_plate = f_cam.get("plate")
-            cam_type = f_cam.get("vehicle_type")
-        else:
-            cam_plate = b_cam.get("plate")
-            cam_type = b_cam.get("vehicle_type")
-    elif f_cam:
-        cam_plate = f_cam.get("plate")
-        cam_type = f_cam.get("vehicle_type")
-    elif b_cam:
-        cam_plate = b_cam.get("plate")
-        cam_type = b_cam.get("vehicle_type")
+    # Get chosen camera plate and type from the disposition flow
+    decision = decide_disposition(r)
+    cam = r.get(f"{decision['chosen_camera']}_camera") or {}
+    cam_plate = cam.get("plate")
+    cam_type = cam.get("vehicle_type")
 
     admin_plate = r["core_event"].get("plate_no") if r.get("core_event") else None
     admin_type = r["core_event"].get("vehicle_type_code", "").upper() if r.get("core_event") else None
@@ -292,7 +276,7 @@ def get_record_stats_category(r):
         return "matched"
 
     # Auto-resolution helper using disposition target
-    dispo = (r.get("disposition") or "").lower()
+    dispo = decision["disposition"].lower()
     dispo_target = None
     if "motor" in dispo:
         dispo_target = "MOTORCYCLE"
@@ -349,6 +333,13 @@ def get_available_reconciliation_dates():
     return dates
 
 def get_reconciliation_history_for_date(date_query):
+    # Saved rows can predate the current rules, so the dashboard always gets a fresh decision
+    records = load_reconciliation_history_for_date(date_query)
+    for record in records:
+        record.update(decide_disposition(record))
+    return records
+
+def load_reconciliation_history_for_date(date_query):
     global daily_reconciliation_history
     if date_query == "today":
         ensure_today_history()
@@ -561,8 +552,9 @@ def check_entry_saved_on_server(plate_key):
         if not record or (record.get("direction") or "entry").lower() != "entry":
             return
         first_seen = record.get("first_seen")
+        chosen_plate = record.get("chosen_plate")
 
-    key_plate = plate_key.split('_')[0]
+    key_plate = (chosen_plate or plate_key.split('_')[0]).replace(" ", "")
     # The server may store car plates spaced ("ABC 1234"), so try both spellings
     candidates = list(dict.fromkeys([key_plate, format_plate(key_plate)[0]]))
     server_record = None
@@ -690,6 +682,106 @@ def get_record_plates(key, rec):
                 plates.add(clean)
     return plates
 
+PAIR_WINDOW_SECONDS = 4  # the other camera's read of the same vehicle arrives within this long of the first read
+PAIR_MAX_PLATE_DISTANCE = 2  # front and back can disagree by OCR noise; a bigger difference is another vehicle
+CAMERA_SLOTS = {"FRONT_CAM": ("front", "front_camera", "back_camera"), "BACK_CAM": ("back", "back_camera", "front_camera")}
+
+def find_lane_partner(data, incoming_dt):
+    """The row in this camera's lane that this read belongs to: a read from either camera, of the same vehicle.
+    Covers the other camera's read and a repeat trigger of the same camera.
+    An UNKNOWN read on either side has no text to compare, so it pairs on lane and time alone."""
+    plate = clean_source_plate(data)
+    best_key, best_score = None, None
+    for key, rec in pending_reconciliations.items():
+        reads = [r for r in (rec.get("front_camera"), rec.get("back_camera")) if r]
+        if not reads:
+            continue
+        if (rec.get("terminal_id") != data.get("terminal_id") or rec.get("gate") != f"GATE {data.get('gate_id')}"
+                or rec.get("direction") != data.get("direction")):
+            continue
+        try:
+            gap = abs((incoming_dt - datetime.fromisoformat(rec.get("first_camera_at"))).total_seconds())
+        except (TypeError, ValueError):
+            continue
+        if gap > PAIR_WINDOW_SECONDS:
+            continue
+        distance = min(
+            0 if "UNKNOWN" in (plate, clean_source_plate(read)) else levenshtein_distance(plate, clean_source_plate(read))
+            for read in reads
+        )
+        if distance <= PAIR_MAX_PLATE_DISTANCE and (best_score is None or (distance, gap) < best_score):
+            best_key, best_score = key, (distance, gap)
+    return best_key
+
+def read_replaces_existing(existing, data):
+    """A repeat trigger only replaces a camera's read if it's at least as good, so a late bad read can't undo a good one."""
+    if not existing or clean_source_plate(existing) == "UNKNOWN":
+        return True
+    if clean_source_plate(data) == "UNKNOWN":
+        return False
+    return (data.get("confidence") or 0) >= (existing.get("confidence") or 0)
+
+BARRIER_MATCH_WINDOW = 600  # seconds; an exit barrier only opens after payment, well past the 120s window used for plate reads
+BARRIER_RETRY_DELAY = 5  # seconds between attempts, since the barrier event can arrive before the plate reads
+BARRIER_MAX_ATTEMPTS = 4
+
+def find_record_for_barrier(barrier, plate, direction, opened_dt):
+    """The row closest to the barrier time with this plate and direction. Rows with no direction yet (no camera read) also qualify."""
+    best_record, best_gap = None, BARRIER_MATCH_WINDOW
+    for rec in list(pending_reconciliations.values()) + daily_reconciliation_history:
+        if plate not in get_record_plates(rec.get("plate_key", ""), rec):
+            continue
+        rec_direction = (rec.get("direction") or "").lower()
+        if rec_direction and direction and rec_direction != direction:
+            continue
+        # A row already opened by another transaction belongs to an earlier visit of the same plate
+        rec_barrier = rec.get("barrier")
+        if rec_barrier and rec_barrier.get("transaction_id") != barrier.get("transaction_id"):
+            continue
+        try:
+            rec_dt = datetime.fromisoformat(rec.get("first_seen")).replace(tzinfo=None)
+        except (TypeError, ValueError):
+            continue
+        gap = abs((opened_dt - rec_dt).total_seconds())
+        if gap <= best_gap:
+            best_record, best_gap = rec, gap
+    return best_record
+
+def apply_barrier_open(barrier, attempt=1):
+    """Stores a server barrier event on its plate's row and pushes the update to the dashboard."""
+    plate = clean_source_plate(barrier)
+    direction = (barrier.get("direction") or "").lower()
+    try:
+        opened_dt = datetime.strptime(barrier.get("barrier_open_at") or "", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        opened_dt = None
+    if not plate or not opened_dt:
+        print(f"[BARRIER] Skipped event without a plate or open time: {barrier}", flush=True)
+        return
+
+    ensure_today_history()
+    with reconciliation_lock:
+        record = find_record_for_barrier(barrier, plate, direction, opened_dt)
+        if record:
+            plate_key = record.get("plate_key")
+            first_seen = record.get("first_seen")
+            fields = {"barrier": barrier}
+            if direction and not record.get("direction"):
+                fields["direction"] = direction
+
+    if not record:
+        if attempt < BARRIER_MAX_ATTEMPTS:
+            timer = threading.Timer(BARRIER_RETRY_DELAY, apply_barrier_open, args=(barrier, attempt + 1))
+            timer.daemon = True
+            timer.start()
+        else:
+            print(f"[BARRIER] No {direction} row found for {plate} at {barrier.get('barrier_open_at')}", flush=True)
+        return
+
+    updated_record = update_reconciliation_fields(plate_key, first_seen, fields)
+    if updated_record:
+        socketio.emit('reconciled_vehicle_updated', updated_record, to='admin_room')
+
 def process_and_buffer_data(source_type, data):
     process_and_buffer_bundle([(source_type, data)])
 
@@ -702,8 +794,9 @@ def process_and_buffer_bundle(sources):
     if not sources:
         return
 
-    incoming_plates = {clean_source_plate(d) for _, d in sources}
-    _, data = sources[0]
+    # UNKNOWN says nothing about which vehicle this is, so it never matches a row by plate
+    incoming_plates = {clean_source_plate(d) for _, d in sources} - {"UNKNOWN"}
+    first_source, data = sources[0]
     incoming_plate = clean_source_plate(data)
 
     now = datetime.now()
@@ -726,8 +819,14 @@ def process_and_buffer_bundle(sources):
     matched_key = None
 
     with reconciliation_lock:
+        # 0. A camera read first looks for the other camera's read of the same vehicle in its lane
+        if first_source in CAMERA_SLOTS:
+            matched_key = find_lane_partner(data, incoming_dt)
+
         # 1. Search for a recent matching record in pending within 2 minutes (120 seconds) of incoming_dt
         for key, rec in list(pending_reconciliations.items()):
+            if matched_key:
+                break
             if get_record_plates(key, rec) & incoming_plates:
                 rec_dt = None
                 first_seen_str = rec.get("first_seen")
@@ -797,6 +896,14 @@ def process_and_buffer_bundle(sources):
 
         # Ingestion assignments
         for source_type, data in sources:
+            if source_type in CAMERA_SLOTS:
+                # Kept from the first read: later triggers replace a camera's read but must not move this
+                if not record.get("first_camera_at"):
+                    record["first_camera"] = CAMERA_SLOTS[source_type][0]
+                    record["first_camera_at"] = data.get("timestamp")
+                if not read_replaces_existing(record.get(CAMERA_SLOTS[source_type][1]), data):
+                    continue
+
             if source_type == "AVAILABLE_SPACE":
                 raw_admin_code = data.get("vehicle_type")
                 admin_code = str(raw_admin_code).strip()
@@ -860,37 +967,7 @@ def process_and_buffer_bundle(sources):
                     "timestamp": data.get("timestamp")
                 }
 
-        # =========================================================
-        # 🎯 AUTOMATED DISPOSITION TRUTH TABLE CALCULATOR
-        # =========================================================
-        # Map parameters dynamically (Default fallbacks protect from crash splits)
-        flp = 1 if (record["front_camera"] and record["front_camera"].get("plate")) else 0
-        fvt = 1 if (record["front_camera"] and record["front_camera"].get("vehicle_type") == "MOTORCYCLE") else 0
-        blp = 1 if (record["back_camera"] and record["back_camera"].get("plate")) else 0
-        bvt = 1 if (record["back_camera"] and record["back_camera"].get("vehicle_type") == "MOTORCYCLE") else 0
-
-        # Tuple key index map matching matrix sequence targets
-        truth_table = {
-            (0, 0, 0, 0): "NA", 
-            (0, 0, 0, 1): "Ticket", 
-            (0, 0, 1, 0): "Car LP", 
-            (0, 0, 1, 1): "Motor LP",
-            (0, 1, 0, 0): "Ticket", 
-            (0, 1, 0, 1): "Ticket", 
-            (0, 1, 1, 0): "Ticket", 
-            (0, 1, 1, 1): "Motor LP",
-            (1, 0, 0, 0): "Car LP",    # Fixed Line 9
-            (1, 0, 0, 1): "Car LP",
-            (1, 0, 1, 0): "Car LP",
-            (1, 0, 1, 1): "Car LP",
-            (1, 1, 0, 0): "NA",        # 🔥 Fixed Line 13 from "Car LP" to "NA"
-            (1, 1, 0, 1): "NA",
-            (1, 1, 1, 0): "NA",
-            (1, 1, 1, 1): "NA"
-        }
-
-        # Match row configuration and append output label code
-        record["disposition"] = truth_table.get((flp, fvt, blp, bvt), "NA")
+        record.update(decide_disposition(record))
 
         # Update match status based on our category calculator
         record["status"] = get_record_stats_category(record)

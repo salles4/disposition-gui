@@ -152,6 +152,7 @@
               <option value="ALL">All Processes</option>
               <option value="SYSTEM">Camera</option>
               <option value="TICKET">Ticket</option>
+              <option value="IGNORED">Ignored</option>
             </select>
           </div>
 
@@ -229,7 +230,7 @@
               <td class="text-bold text-highlight">
                 <template v-if="!splitExitLayout || getRowDirection(row) !== 'exit'">
                 <div class="plate-code-display" style="font-size: 1.05rem;">
-                  {{ displayPlate(row.plate_key) }}
+                  {{ getRowPlate(row) }}
                   <span v-if="row.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
                   <span v-else-if="awaitingServerCheck.has(row.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" title="Waiting to check server (/plate-no)"></span>
                 </div>
@@ -249,13 +250,16 @@
                     {{ row.direction || 'entry' }}
                   </span>
                 </div>
+                <div v-if="row.barrier?.barrier_open_at" class="barrier-open-time" :title="getBarrierTitle(row)">
+                  <span class="mdi mdi-boom-gate-up"></span> {{ getBarrierLabel(row) }}
+                </div>
                 </template>
               </td>
 
               <td class="col-cell-front">
                 <Transition name="cell-fade" mode="out-in">
                 <div v-if="row.front_camera" class="source-cell-block">
-                  <div :class="['plate-badge', 'badge-front', { 'badge-chosen': getHigherConfidenceCamera(row) === 'front' }]">{{ row.front_camera.plate || displayPlate(row.plate_key) }}</div>
+                  <div :class="['plate-badge', 'badge-front', { 'badge-chosen': getChosenCamera(row) === 'front' }]">{{ row.front_camera.plate || displayPlate(row.plate_key) }}</div>
                   <div class="nested-type-row">
                     <span class="type-text">{{ row.front_camera.vehicle_type }}</span>
                     <span :class="['conf-text', getConfidenceClass(row.front_camera.confidence)]">({{ row.front_camera.confidence }}%)</span>
@@ -271,7 +275,7 @@
               <td class="col-cell-back">
                 <Transition name="cell-fade" mode="out-in">
                 <div v-if="row.back_camera" class="source-cell-block">
-                  <div :class="['plate-badge', 'badge-back', { 'badge-chosen': getHigherConfidenceCamera(row) === 'back' }]">{{ row.back_camera.plate || displayPlate(row.plate_key) }}</div>
+                  <div :class="['plate-badge', 'badge-back', { 'badge-chosen': getChosenCamera(row) === 'back' }]">{{ row.back_camera.plate || displayPlate(row.plate_key) }}</div>
                   <div class="nested-type-row">
                     <span class="type-text">{{ row.back_camera.vehicle_type }}</span>
                     <span :class="['conf-text', getConfidenceClass(row.back_camera.confidence)]">({{ row.back_camera.confidence }}%)</span>
@@ -339,9 +343,13 @@
 
               <td class="col-cell-decision" style="vertical-align: middle;">
                 <Transition name="cell-fade" mode="out-in">
-                <div v-if="getTicketingDecision(row) === 'TICKET'" :key="getTicketShortReason(row)" class="decision-cell" :title="getTicketingRecommendation(row).reason">
+                <div v-if="getTicketingDecision(row) === 'TICKET'" :key="getTicketShortReason(row)" class="decision-cell" :title="row.decision_reason">
                   <span class="decision-tag ticket">Ticket</span>
                   <span class="decision-reason">{{ getTicketShortReason(row) }}</span>
+                </div>
+                <div v-else-if="getTicketingDecision(row) === 'IGNORED'" key="ignored" class="decision-cell" :title="row.decision_reason">
+                  <span class="decision-tag ignored">Ignored</span>
+                  <span class="decision-reason">{{ row.decision_reason_short }}</span>
                 </div>
                 <span v-else key="none" class="text-muted">—</span>
                 </Transition>
@@ -349,7 +357,7 @@
 
               <td v-if="splitExitLayout" class="col-cell-exit text-bold text-highlight">
                 <template v-if="getRowDirection(row) === 'exit'">
-                  <div class="plate-code-display" style="font-size: 1.05rem;">{{ displayPlate(row.plate_key) }}</div>
+                  <div class="plate-code-display" style="font-size: 1.05rem;">{{ getRowPlate(row) }}</div>
                   <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
                     <span v-if="getRowLocationLabel(row)" class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
                       {{ getRowLocationLabel(row) }}
@@ -357,6 +365,9 @@
                     <span class="badge-sm badge-dir-exit" style="background: rgba(23,162,184,0.15); color: #00bcd4; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
                       exit
                     </span>
+                  </div>
+                  <div v-if="row.barrier?.barrier_open_at" class="barrier-open-time" :title="getBarrierTitle(row)">
+                    <span class="mdi mdi-boom-gate-up"></span> {{ getBarrierLabel(row) }}
                   </div>
                 </template>
               </td>
@@ -410,12 +421,13 @@
             <div class="modal-title-block">
               <span class="modal-eyebrow"><span class="mdi mdi-image-multiple"></span> Deep Audit Profile Explorer</span>
               <div class="modal-title-row">
-                <span class="modal-plate-title">{{ displayPlate(selectedVehicle.plate_key) }}</span>
+                <span class="modal-plate-title">{{ getRowPlate(selectedVehicle) }}</span>
                 <span v-if="selectedVehicle.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
                 <span v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" title="Waiting to check server (/plate-no)"></span>
                 <span v-if="getRowLocationLabel(selectedVehicle)" class="modal-chip">{{ getRowLocationLabel(selectedVehicle) }}</span>
                 <span :class="['modal-chip', getRowDirection(selectedVehicle) === 'exit' ? 'chip-exit' : 'chip-entry']">{{ selectedVehicle.direction || 'entry' }}</span>
                 <span class="modal-first-seen"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.first_seen) }}</span>
+                <span v-if="selectedVehicle.barrier?.barrier_open_at" class="modal-first-seen" :title="getBarrierTitle(selectedVehicle)"><span class="mdi mdi-boom-gate-up"></span> {{ getBarrierLabel(selectedVehicle) }}</span>
               </div>
             </div>
             <button class="close-btn" @click="closeModal">&times;</button>
@@ -440,11 +452,11 @@
               <span class="meta-label">Process Mode</span>
               <span>
                 <span :class="['decision-tag', getTicketingDecision(selectedVehicle).toLowerCase()]">
-                  {{ getTicketingDecision(selectedVehicle) === 'TICKET' ? 'Ticket' : 'Camera' }}
+                  {{ getDecisionLabel(selectedVehicle) }}
                 </span>
               </span>
-              <span class="meta-note" v-if="getTicketingRecommendation(selectedVehicle).reason">
-                {{ getTicketingRecommendation(selectedVehicle).reason }}
+              <span class="meta-note" v-if="selectedVehicle.decision_reason">
+                {{ selectedVehicle.decision_reason }}
               </span>
             </div>
           </div>
@@ -580,6 +592,8 @@ const displayPlate = (key) => {
   return key.split('_')[0]
 }
 
+const getRowPlate = (row) => row.chosen_plate || displayPlate(row.plate_key)
+
 const socket = io(import.meta.env.DEV ? `http://${window.location.hostname}:${import.meta.env.VITE_WS_PORT || '5015'}` : window.location.origin)
 
 // Server addresses come from the backend config (servers section, editable on the admin dashboard)
@@ -625,7 +639,7 @@ const selectedVehicleType = ref('ALL')
 const selectedConfidence = ref('ALL')
 const selectedRouting = ref('ALL')
 const sortOrderTime = ref('DESC')
-const excludeUnknown = ref(true)
+const excludeUnknown = ref(false)
 const selectedDirection = ref('ALL')
 const selectedGate = ref('ALL')
 const selectedMissing = ref('ALL')
@@ -671,7 +685,7 @@ const activeFilterCount = computed(() => [
   selectedVehicleType.value !== 'ALL',
   selectedConfidence.value !== 'ALL',
   selectedRouting.value !== 'ALL',
-  !excludeUnknown.value,
+  excludeUnknown.value,
   !!searchQuery.value.trim()
 ].filter(Boolean).length)
 
@@ -694,26 +708,75 @@ const loadSheetJS = () => {
   })
 }
 
+const formatExportDateTime = (row) => row.first_seen ? `${String(row.first_seen).slice(0, 10)} ${formatTime(row.first_seen)}` : ''
+
+// Confidence is exported as a number so it can be sorted and filtered in Excel
+const getExportConfidence = (camera) => {
+  const confidence = parseFloat(camera?.confidence)
+  return Number.isNaN(confidence) ? '' : confidence
+}
+
+const getExportTicketReason = (row) => {
+  if (getTicketingDecision(row) !== 'TICKET') return ''
+  return row.routing_decision === 'TICKET' ? row.decision_reason : 'Manual'
+}
+
+const getExportServerFound = (row) => {
+  if (row.server_saved == null) return ''
+  return row.server_saved ? 'Yes' : 'No'
+}
+
+const getExportChosenCamera = (row) => {
+  const camera = getChosenCamera(row)
+  if (!camera) return ''
+  return camera === 'front' ? 'Front' : 'Back'
+}
+
+// One entry per report column, left to right. Images are left out to keep the file small.
+const EXPORT_COLUMNS = [
+  { header: "Date & Time", width: 24, value: formatExportDateTime },
+  { header: "Plate Key", width: 22, value: (row) => row.plate_key },
+  { header: "Chosen Plate", width: 15, value: (row) => row.chosen_plate },
+  { header: "Location", width: 22, value: (row) => getRowLocationLabel(row) },
+  { header: "Direction", width: 11, value: (row) => row.direction },
+  { header: "Barrier Open", width: 21, value: (row) => row.barrier?.barrier_open_at },
+  { header: "Barrier Gap (s)", width: 15, value: (row) => getBarrierGapSeconds(row) ?? '' },
+  { header: "Front Cam Plate", width: 18, value: (row) => row.front_camera?.plate },
+  { header: "Front Cam Vehicle Type", width: 22, value: (row) => row.front_camera?.vehicle_type },
+  { header: "Front Cam Raw Type", width: 20, value: (row) => row.front_camera?.raw_type_received },
+  { header: "Front Cam Confidence", width: 20, value: (row) => getExportConfidence(row.front_camera) },
+  { header: "Back Cam Plate", width: 18, value: (row) => row.back_camera?.plate },
+  { header: "Back Cam Vehicle Type", width: 22, value: (row) => row.back_camera?.vehicle_type },
+  { header: "Back Cam Raw Type", width: 20, value: (row) => row.back_camera?.raw_type_received },
+  { header: "Back Cam Confidence", width: 20, value: (row) => getExportConfidence(row.back_camera) },
+  { header: "Chosen Camera", width: 15, value: getExportChosenCamera },
+  { header: "HCP Plate", width: 15, value: (row) => row.hikcentral?.plate },
+  { header: "HCP Vehicle Type", width: 18, value: (row) => row.hikcentral?.vehicleType },
+  { header: "HCP Raw Type", width: 18, value: (row) => row.hikcentral?.raw_type_received },
+  { header: "HCP Lane", width: 24, value: (row) => row.hikcentral?.gateName },
+  { header: "Admin Plate", width: 15, value: (row) => row.core_event?.plate_no },
+  { header: "Admin Vehicle Type", width: 20, value: (row) => row.core_event?.vehicle_type_code },
+  { header: "Admin Raw Code", width: 16, value: (row) => row.core_event?.raw_type_received },
+  { header: "Admin Gate", width: 12, value: (row) => row.core_event?.gate_id },
+  { header: "Disposition Result", width: 20, value: (row) => row.disposition || "NA" },
+  { header: "Process Mode", width: 18, value: (row) => getTicketingDecision(row) },
+  { header: "Decision Source", width: 16, value: (row) => row.ticketing_decision ? 'Manual' : 'Auto' },
+  { header: "Ticket Reason", width: 40, value: getExportTicketReason },
+  { header: "Verification Result", width: 20, value: (row) => getValidationInfo(row).text || "PARTIAL", isStatus: true },
+  { header: "Verification Details", width: 34, value: (row) => getValidationInfo(row).details },
+  { header: "Server Found", width: 14, value: getExportServerFound },
+  { header: "Server Plate", width: 15, value: (row) => row.server_record?.plate_no },
+  { header: "Server Vehicle Type", width: 20, value: (row) => row.server_record?.vehicle_type },
+  { header: "Server Entry", width: 21, value: (row) => row.server_record?.entry },
+  { header: "Server Ticket No", width: 18, value: (row) => row.server_record?.ticket_no },
+  { header: "Server Reference No", width: 20, value: (row) => row.server_record?.reference_no },
+  { header: "Server Reason", width: 30, value: (row) => row.server_record?.reason || row.server_record?.message }
+]
+
 const exportToExcel = async () => {
   try {
     const XLSX = await loadSheetJS()
-    
-    // Define headers
-    const headers = [
-      "Date & Time",
-      "Front Cam Plate",
-      "Front Cam Vehicle Type",
-      "Back Cam Plate",
-      "Back Cam Vehicle Type",
-      "HCP Plate",
-      "HCP Vehicle Type",
-      "Admin Plate",
-      "Admin Vehicle Type",
-      "Disposition Result",
-      "Process Mode",
-      "Verification Result"
-    ]
-    
+
     const ws = {}
     
     // Header Style (Premium Dark Header)
@@ -744,9 +807,9 @@ const exportToExcel = async () => {
     }
     
     // Set headers
-    headers.forEach((header, colIdx) => {
+    EXPORT_COLUMNS.forEach((column, colIdx) => {
       const cellRef = XLSX.utils.encode_cell({ r: 0, c: colIdx })
-      ws[cellRef] = { v: header, t: 's', s: headerStyle }
+      ws[cellRef] = { v: column.header, t: 's', s: headerStyle }
     })
     
     // Status colors cell styling helper
@@ -776,62 +839,25 @@ const exportToExcel = async () => {
 
     // Add rows
     filteredComparisonList.value.forEach((row, rowIdx) => {
-      const excelRow = rowIdx + 2 // 1-based index (row 1 is header)
-      
-      const colValues = [
-        formatTime(row.first_seen) || "",
-        row.front_camera ? (row.front_camera.plate || "") : "",
-        row.front_camera ? (row.front_camera.vehicle_type || "") : "",
-        row.back_camera ? (row.back_camera.plate || "") : "",
-        row.back_camera ? (row.back_camera.vehicle_type || "") : "",
-        row.hikcentral ? (row.hikcentral.plate || "") : "",
-        row.hikcentral ? (row.hikcentral.vehicleType || "") : "",
-        row.core_event ? (row.core_event.plate_no || "") : "",
-        row.core_event ? (row.core_event.vehicle_type_code || "") : ""
-      ]
-      
-      colValues.forEach((val, colIdx) => {
+      EXPORT_COLUMNS.forEach((column, colIdx) => {
         const cellRef = XLSX.utils.encode_cell({ r: rowIdx + 1, c: colIdx })
-        ws[cellRef] = { v: val, t: 's', s: defaultStyle }
+        const value = column.value(row) ?? ""
+        ws[cellRef] = typeof value === 'number'
+          ? { v: value, t: 'n', s: defaultStyle }
+          : { v: String(value), t: 's', s: column.isStatus ? getStatusStyle(value) : defaultStyle }
       })
-      
-      // Column J: Disposition Result (index 9)
-      const dispCellRef = XLSX.utils.encode_cell({ r: rowIdx + 1, c: 9 })
-      ws[dispCellRef] = { v: row.disposition || "NA", t: 's', s: defaultStyle }
-
-      // Column K: Routing Decision (index 10)
-      const routeCellRef = XLSX.utils.encode_cell({ r: rowIdx + 1, c: 10 })
-      ws[routeCellRef] = { v: getTicketingDecision(row), t: 's', s: defaultStyle }
-      
-      // Column L: Verification Result (index 11)
-      const verCellRef = XLSX.utils.encode_cell({ r: rowIdx + 1, c: 11 })
-      const validationText = getValidationInfo(row).text || "PARTIAL"
-      ws[verCellRef] = { v: validationText, t: 's', s: getStatusStyle(validationText) }
     })
     
     // Set ref
     const maxRow = filteredComparisonList.value.length
     ws['!ref'] = XLSX.utils.encode_range({
       s: { r: 0, c: 0 },
-      e: { r: maxRow, c: headers.length - 1 }
+      e: { r: maxRow, c: EXPORT_COLUMNS.length - 1 }
     })
-    
+
     // Column widths
-    ws['!cols'] = [
-      { wch: 15 }, // Date & Time
-      { wch: 18 }, // Front Cam Plate
-      { wch: 22 }, // Front Cam Vehicle Type
-      { wch: 18 }, // Back Cam Plate
-      { wch: 22 }, // Back Cam Vehicle Type
-      { wch: 15 }, // HCP Plate
-      { wch: 18 }, // HCP Vehicle Type
-      { wch: 15 }, // Admin Plate
-      { wch: 20 }, // Admin Vehicle Type
-      { wch: 20 }, // Disposition Result
-      { wch: 18 }, // Process Mode
-      { wch: 20 }  // Verification Result
-    ]
-    
+    ws['!cols'] = EXPORT_COLUMNS.map(column => ({ wch: column.width }))
+
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Reconciliation Report")
     
@@ -843,156 +869,14 @@ const exportToExcel = async () => {
   }
 }
 
-const getRowVehicleType = (row) => {
-  if (!row) return 'UNKNOWN'
-  if (row.core_event && row.core_event.vehicle_type_code) {
-    return row.core_event.vehicle_type_code.toUpperCase()
-  }
-  // Try higher confidence camera
-  const chosenCam = getHigherConfidenceCamera(row)
-  if (chosenCam === 'front' && row.front_camera && row.front_camera.vehicle_type) {
-    return row.front_camera.vehicle_type.toUpperCase()
-  }
-  if (chosenCam === 'back' && row.back_camera && row.back_camera.vehicle_type) {
-    return row.back_camera.vehicle_type.toUpperCase()
-  }
-  if (row.front_camera && row.front_camera.vehicle_type) {
-    return row.front_camera.vehicle_type.toUpperCase()
-  }
-  if (row.back_camera && row.back_camera.vehicle_type) {
-    return row.back_camera.vehicle_type.toUpperCase()
-  }
-  if (row.hikcentral && row.hikcentral.vehicleType) {
-    return row.hikcentral.vehicleType.toUpperCase()
-  }
-  return 'UNKNOWN'
-}
+// The decision comes from the backend (scripts/disposition.py); a manual override wins
+const getTicketingDecision = (row) => row.ticketing_decision || row.routing_decision || 'NA'
 
-const motorcyclePatterns = [
-  /^\d{4}[A-Z]{2}$/,       // Legacy MC (e.g., 2724SO)
-  /^[A-Z]{2}\d{5}$/,       // 2 Letters, 5 Numbers (AB12345)
-  /^[A-Z]{3}\d{5}$/,       // 3 Letters, 5 Numbers (ABC12345)
-  /^[A-Z]\d{5}[A-Z]$/,     // 1 Letter, 5 Numbers, 1 Letter (N12345A)
-  /^\d{3}[A-Z]{3}$/,       // 3 Numbers, 3 Letters (123ABC)
-  /^[A-Z]\d{3}[A-Z]{2}$/,  // A 123 BC
-  /^[A-Z]{2}\d{3}[A-Z]$/,  // AB 123 C
-  /^\d[A-Z]{3}\d{2}$/,     // 1 ABC 23
-  /^[A-Z]\d{4}[A-Z]$/,     // A 1234 C
-  /^[A-Z]\d[A-Z]\d{3}$/,   // A 1 C 234
-  /^[A-Z]{2}\d{2}[A-Z]\d{2}$/ // A 12 C 34
-]
-
-const carPatterns = [
-  // --- Standard 4-Wheel MV Formats ---
-  /^[A-Z]{3}\d{4}$/,       // 3 Letters, 4 Numbers (ABC1234)
-  /^[A-Z]{3}\d{3}$/,       // 3 Letters, 3 Numbers (WFU799)
-  /^[A-Z]{2}\d{4}$/,       // 2 Letters, 4 Numbers (Government/Electric/Conduction SE1234)
-  
-  // --- Conduction Stickers & Temporary Plates ---
-  /^[A-Z]\d{4}$/,          // 1 Letter, 4 Numbers (Legacy Conduction)
-  
-  // --- LTO MV File Numbers (Temporary registrations) ---
-  /^\d{11}$/,              // 11-Digit Pure Numerical File Block (13010000123)
-  /^\d{10}$/,              // 10-Digit Pure Numerical File Block
-  
-  // --- Protocol & Diplomatic Formats ---
-  /^\d{1,2}$/,             // 1 to 2 Digit Government Protocol Keys (1 to 16)
-  /^\d{7}$/                // 7-Digit Diplomatic Plates (1234567)
-]
-
-const isValidPlateFormat = (plate) => {
-  if (!plate || typeof plate !== 'string') return false
-  const clean = plate.replace(/[\s-]+/g, '').toUpperCase()
-  if (!clean) return false
-  return motorcyclePatterns.some(pattern => pattern.test(clean)) || carPatterns.some(pattern => pattern.test(clean))
-}
-
-const getTicketingRecommendation = (row) => {
-  const plate = displayPlate(row.plate_key) || ''
-const clean = plate.replace(/\s+/g, '').toUpperCase()
-
-if (!clean) return { recommend: true, reason: 'Empty Read', short: 'Empty read' }
-
-const motorcyclePatterns = [
-  /^\d{4}[A-Z]{2}$/,       // Legacy MC - FROM YOUR IMAGE (e.g., 2724SO)
-  /^[A-Z]{2}\d{5}$/,       // 2 Letters, 5 Numbers (AB12345)
-  /^[A-Z]{3}\d{5}$/,       // 3 Letters, 5 Numbers (ABC12345)
-  /^[A-Z]\d{5}[A-Z]$/,     // 1 Letter, 5 Numbers, 1 Letter (N12345A)
-  /^\d{3}[A-Z]{3}$/,       // 3 Numbers, 3 Letters (123ABC)
-  /^[A-Z]\d{3}[A-Z]{2}$/,  // A 123 BC
-  /^[A-Z]{2}\d{3}[A-Z]$/,  // AB 123 C
-  /^\d[A-Z]{3}\d{2}$/,     // 1 ABC 23
-  /^[A-Z]\d{4}[A-Z]$/,     // A 1234 C
-  /^[A-Z]\d[A-Z]\d{3}$/,   // A 1 C 234
-  /^[A-Z]\d{2}[A-Z]\d{2}$/ // A 12 C 34
-]
-
-const carPatterns = [
-  // --- Standard 4-Wheel MV Formats ---
-  /^[A-Z]{3}\d{4}$/,       // 3 Letters, 4 Numbers (ABC1234)
-  /^[A-Z]{3}\d{3}$/,       // 3 Letters, 3 Numbers (WFU799)
-  /^[A-Z]{2}\d{4}$/,       // 2 Letters, 4 Numbers (Government/Electric/Conduction SE1234)
-  
-  // --- Conduction Stickers & Temporary Plates ---
-  /^[A-Z]\d{4}$/,          // 1 Letter, 4 Numbers (Legacy Conduction)
-  
-  // --- LTO MV File Numbers (Temporary registrations) ---
-  /^\d{11}$/,              // 11-Digit Pure Numerical File Block (13010000123)
-  /^\d{10}$/,              // 10-Digit Pure Numerical File Block
-  
-  // --- Protocol & Diplomatic Formats ---
-  /^\d{1,2}$/,             // 1 to 2 Digit Government Protocol Keys (1 to 16)
-  /^\d{7}$/                // 7-Digit Diplomatic Plates (1234567)
-]
-
-  const isMotorcyclePattern = motorcyclePatterns.some(pattern => pattern.test(clean))
-  const isCarPattern = carPatterns.some(pattern => pattern.test(clean))
-
-  if (!isMotorcyclePattern && !isCarPattern) {
-    const rowType = getRowVehicleType(row)
-    if (rowType === 'MOTORCYCLE') {
-      return { recommend: true, reason: 'Invalid Motorcycle Format (Expected: AB12345, 123ABC, A12C34, A1C234, A1234C, etc.)', short: 'Wrong plate format' }
-    } else if (rowType === 'CAR') {
-      return { recommend: true, reason: 'Invalid Car Format (Expected: ABC1234, WFU799, SE1234, etc.)', short: 'Wrong plate format' }
-    }
-    return { recommend: true, reason: 'Invalid Format', short: 'Wrong plate format' }
-  }
-
-  const rowType = getRowVehicleType(row)
-  
-  if (rowType !== 'UNKNOWN') {
-    if (isMotorcyclePattern && rowType === 'CAR') {
-      return { recommend: true, reason: 'Type Mismatch (Motorcycle plate on Car)', short: 'Type mismatch' }
-    }
-    if (isCarPattern && rowType === 'MOTORCYCLE') {
-      return { recommend: true, reason: 'Type Mismatch (Car plate on Motorcycle)', short: 'Type mismatch' }
-    }
-  }
-
-  // Low OCR confidence on the best available camera read (same cutoff as the red conf-low class)
-  const bestCamera = getHigherConfidenceCamera(row)
-  if (bestCamera) {
-    const bestConf = parseFloat(row[`${bestCamera}_camera`].confidence) || 0
-    if (bestConf < 85) {
-      return { recommend: true, reason: `Low Camera Confidence (${bestConf}%)`, short: `Low score (${bestConf}%)` }
-    }
-  }
-
-  return { recommend: false, reason: 'Valid Format and Type' }
-}
-
-const getTicketingDecision = (row) => {
-  if (row.ticketing_decision) {
-    return row.ticketing_decision
-  }
-  return getTicketingRecommendation(row).recommend ? 'TICKET' : 'SYSTEM'
-}
+const DECISION_LABELS = { TICKET: 'Ticket', SYSTEM: 'Camera', IGNORED: 'Ignored', NA: 'NA' }
+const getDecisionLabel = (row) => DECISION_LABELS[getTicketingDecision(row)] || getTicketingDecision(row)
 
 // Short label shown under the Ticket tag in the table; manual overrides have no auto reason
-const getTicketShortReason = (row) => {
-  const rec = getTicketingRecommendation(row)
-  return rec.recommend ? rec.short : 'Manual'
-}
+const getTicketShortReason = (row) => row.routing_decision === 'TICKET' ? row.decision_reason_short : 'Manual'
 
 const updateTicketingDecision = (row, decision) => {
   row.ticketing_decision = decision
@@ -1016,6 +900,22 @@ const hasNormalServerRecord = (row) => {
 
 // Server timestamps come as "YYYY-MM-DD HH:MM:SS" (local time)
 const parseServerTime = (value) => new Date(typeof value === 'string' && !value.includes('T') ? value.replace(' ', 'T') : value).getTime()
+
+// Seconds from the first camera read to the barrier opening. barrier_open_at only has whole seconds, so this does too.
+const getBarrierGapSeconds = (row) => {
+  if (!row.barrier?.barrier_open_at || !row.first_camera_at) return null
+  return Math.round((parseServerTime(row.barrier.barrier_open_at) - parseServerTime(row.first_camera_at)) / 1000)
+}
+const getBarrierLabel = (row) => {
+  const gap = getBarrierGapSeconds(row)
+  const time = `Barrier ${formatTime(row.barrier.barrier_open_at)}`
+  return gap === null ? time : `${time} (${gap >= 0 ? '+' : ''}${gap}s)`
+}
+const getBarrierTitle = (row) => {
+  const gap = getBarrierGapSeconds(row)
+  const opened = `Gate barrier opened at ${row.barrier.barrier_open_at}`
+  return gap === null ? opened : `${opened}, ${gap}s after the first camera read`
+}
 
 // An entry this much older than our own detection means the server matched a stale open transaction
 const SERVER_ENTRY_STALE_MS = 24 * 60 * 60 * 1000
@@ -1096,20 +996,10 @@ const kpiFilteredList = computed(() => {
 
   // 0. Filter out UNKNOWN plates if excludeUnknown is active
   if (excludeUnknown.value) {
+    // A real read paired with the other camera's UNKNOWN read is still a usable row
     list = list.filter(row => {
-      const pk = (row.plate_key || '').toUpperCase()
-      const fPlate = (row.front_camera?.plate || '').toUpperCase()
-      const bPlate = (row.back_camera?.plate || '').toUpperCase()
-      const hPlate = (row.hikcentral?.plate || '').toUpperCase()
-      const cPlate = (row.core_event?.plate_no || '').toUpperCase()
-      
-      const isPkUnknown = pk.includes('UNKNOWN') || !pk
-      const isFUnknown = fPlate.includes('UNKNOWN')
-      const isBUnknown = bPlate.includes('UNKNOWN')
-      const isHUnknown = hPlate.includes('UNKNOWN')
-      const isCUnknown = cPlate.includes('UNKNOWN')
-      
-      return !(isPkUnknown || isFUnknown || isBUnknown || isHUnknown || isCUnknown)
+      const plate = getRowPlate(row).toUpperCase()
+      return plate && !plate.includes('UNKNOWN')
     })
   }
 
@@ -1175,7 +1065,7 @@ const kpiFilteredList = computed(() => {
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.trim().toUpperCase()
     list = list.filter(row => {
-      const plate = (row.plate_key || '').toUpperCase()
+      const plate = `${row.plate_key || ''} ${row.chosen_plate || ''}`.toUpperCase()
       return plate.includes(query)
     })
   }
@@ -1269,15 +1159,7 @@ const formatTime = (isoString) => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-const getHigherConfidenceCamera = (row) => {
-  if (!row.front_camera && !row.back_camera) return null
-  if (!row.front_camera) return 'back'
-  if (!row.back_camera) return 'front'
-  
-  const frontConf = parseFloat(row.front_camera.confidence) || 0
-  const backConf = parseFloat(row.back_camera.confidence) || 0
-  return frontConf >= backConf ? 'front' : 'back'
-}
+const getChosenCamera = (row) => row.chosen_camera || null
 
 const getConfidenceClass = (confidence) => {
   const conf = parseFloat(confidence) || 0
@@ -1307,7 +1189,7 @@ const getValidationInfo = (row) => {
   // Get chosen camera plate and vehicle type
   let camPlate = null
   let camType = null
-  const chosenCam = getHigherConfidenceCamera(row)
+  const chosenCam = getChosenCamera(row)
   if (chosenCam === 'front' && row.front_camera) {
     camPlate = row.front_camera.plate
     camType = row.front_camera.vehicle_type
@@ -1694,6 +1576,11 @@ onUnmounted(() => {
   background: rgba(244, 63, 94, 0.15);
   color: #f43f5e;
   border-color: rgba(244, 63, 94, 0.2);
+}
+.decision-tag.ignored, .decision-tag.na {
+  background: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.2);
 }
 .decision-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
 .decision-reason { font-size: 0.68rem; color: #9ca3af; white-space: nowrap; }
@@ -2398,6 +2285,8 @@ onUnmounted(() => {
 /* Header & summary */
 .server-saved-check { color: #2ebd4e; font-size: 0.9rem; margin-left: 4px; vertical-align: middle; }
 .light .server-saved-check { color: #15803d; }
+.barrier-open-time { margin-top: 5px; display: flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; color: #fbbf24; white-space: nowrap; }
+.light .barrier-open-time { color: #b45309; }
 .server-check-pending { color: #888; font-size: 0.9rem; margin-left: 4px; vertical-align: middle; }
 .modal-title-row .server-check-pending { font-size: 1.1rem; margin-left: 0; }
 .light .server-check-pending { color: #6b7280; }
@@ -2492,6 +2381,7 @@ onUnmounted(() => {
 
 .light .dispo-tag.na { background: #f3f4f6; color: #4b5563; }
 .light .dispo-tag.ticket, .light .decision-tag.ticket { background: rgba(190, 18, 60, 0.1); color: #be123c; border-color: rgba(190, 18, 60, 0.25); }
+.light .decision-tag.ignored, .light .decision-tag.na { background: rgba(71, 85, 105, 0.08); color: #475569; border-color: rgba(71, 85, 105, 0.2); }
 .light .dispo-tag.car_lp, .light .decision-tag.system { background: rgba(14, 116, 144, 0.1); color: #0e7490; border-color: rgba(14, 116, 144, 0.25); }
 .light .dispo-tag.motor_lp { background: rgba(161, 98, 7, 0.1); color: #a16207; border-color: rgba(161, 98, 7, 0.25); }
 .light .status-tag.matched { background: rgba(21, 128, 61, 0.1); color: #15803d; }
