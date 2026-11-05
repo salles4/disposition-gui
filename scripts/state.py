@@ -818,6 +818,11 @@ def process_and_buffer_bundle(sources):
 
     matched_key = None
 
+    # HCP knows its direction, so its exit read can't land on the same plate's entry row (or the reverse)
+    hcp_direction = data.get("direction") if first_source == "HCP" else None
+    def direction_conflicts(rec):
+        return bool(hcp_direction and rec.get("direction") and rec.get("direction") != hcp_direction)
+
     with reconciliation_lock:
         # 0. A camera read first looks for the other camera's read of the same vehicle in its lane
         if first_source in CAMERA_SLOTS:
@@ -827,7 +832,7 @@ def process_and_buffer_bundle(sources):
         for key, rec in list(pending_reconciliations.items()):
             if matched_key:
                 break
-            if get_record_plates(key, rec) & incoming_plates:
+            if get_record_plates(key, rec) & incoming_plates and not direction_conflicts(rec):
                 rec_dt = None
                 first_seen_str = rec.get("first_seen")
                 if first_seen_str:
@@ -845,7 +850,7 @@ def process_and_buffer_bundle(sources):
         if not matched_key:
             for rec in daily_reconciliation_history:
                 key = rec.get("plate_key", "")
-                if get_record_plates(key, rec) & incoming_plates:
+                if get_record_plates(key, rec) & incoming_plates and not direction_conflicts(rec):
                     rec_dt = None
                     first_seen_str = rec.get("first_seen")
                     if first_seen_str:
@@ -966,6 +971,9 @@ def process_and_buffer_bundle(sources):
                     "gateName": data.get("gateName"),
                     "timestamp": data.get("timestamp")
                 }
+                # Cameras know their lane's direction better, so this only fills a row without one
+                if data.get("direction") and not record.get("direction"):
+                    record["direction"] = data.get("direction")
 
         record.update(decide_disposition(record))
 

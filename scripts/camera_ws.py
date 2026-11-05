@@ -184,6 +184,71 @@ def process_camera_vehicle(plate_no, raw_vehicle_type, gate_id):
 
 last_processed_events = {}
 
+HCP_LANE_DIRECTIONS = {1: "entry", 2: "exit"}
+HCP_EVENT_DEDUPE_SECONDS = 600
+seen_hcp_events = {}
+seen_hcp_events_lock = threading.Lock()
+
+def merge_hcp_events(events, guid=""):
+    """Merges HCP event details into one read. An event can carry only some fields; blank or -1 means not set."""
+    merged_hcp = {
+        "transactionId": guid, "plate": "", "vehicleType": "",
+        "frontImage": "", "backImage": "", "gateName": "", "timestamp": "", "direction": ""
+    }
+
+    for ev in events:
+        car_info = ev.get("carInfo", {})
+        lane_info = ev.get("laneInfo", {})
+        passageway_info = ev.get("passagewayInfo", {})
+        capture_list = ev.get("captureInfoList", [])
+
+        if car_info.get("plate"):
+            merged_hcp["plate"] = car_info.get("plate").strip().upper()
+        if car_info.get("vehicleType"):
+            merged_hcp["vehicleType"] = car_info.get("vehicleType")
+        if car_info.get("frontImage"):
+            merged_hcp["frontImage"] = car_info.get("frontImage")
+        if capture_list and len(capture_list) > 0 and capture_list[0].get("backimage"):
+            merged_hcp["backImage"] = capture_list[0].get("backimage")
+        # Exits carry timeOut instead of timeIn
+        for time_field in ("timeIn", "timeOut"):
+            if ev.get(time_field) and str(ev.get(time_field)) != "-1":
+                merged_hcp["timestamp"] = ev.get(time_field)
+        if lane_info.get("direction") in HCP_LANE_DIRECTIONS:
+            merged_hcp["direction"] = HCP_LANE_DIRECTIONS[lane_info.get("direction")]
+
+        l_name = lane_info.get("laneName", "").strip()
+        p_name = passageway_info.get("passagewayName", "").strip()
+
+        # FIX: Verify text fields are not empty or invalid placeholders before committing updates
+        if l_name and p_name and l_name != "-1" and p_name != "-1":
+            merged_hcp["gateName"] = f"{p_name} - {l_name}"
+
+    return merged_hcp
+
+def process_hcp_notification(body):
+    """Reconciles an OnEventNotify POST from HCP. Each event is one vehicle pass, posted again once its image
+    reference is ready, so only the first post of an eventId is used. Image-only posts have no plate and are skipped."""
+    from scripts.logging_reporter import log_event
+    for ev in (body.get("params") or {}).get("events") or []:
+        details = ev.get("data") or {}
+        merged_hcp = merge_hcp_events([details], details.get("guid", ""))
+        if not merged_hcp["plate"]:
+            continue
+
+        event_id = ev.get("eventId") or details.get("guid")
+        now_t = time.time()
+        with seen_hcp_events_lock:
+            for seen_id in [k for k, seen_at in seen_hcp_events.items() if now_t - seen_at > HCP_EVENT_DEDUPE_SECONDS]:
+                del seen_hcp_events[seen_id]
+            if event_id in seen_hcp_events:
+                continue
+            if event_id:
+                seen_hcp_events[event_id] = now_t
+
+        log_event(f"[HCP] Webhook Event Processed: Plate [{merged_hcp['plate']}] at {merged_hcp['gateName']}", "SYSTEM")
+        threading.Thread(target=process_and_buffer_bundle, args=([("HCP", merged_hcp)],), daemon=True).start()
+
 def on_ws_message(ws, message):
     from scripts.logging_reporter import log_event
     try:
@@ -229,37 +294,7 @@ def on_ws_message(ws, message):
                 threading.Thread(target=apply_barrier_open, args=(payload["barrier"],), daemon=True).start()
 
             hcp_payload = payload.get("hcp", {})
-            events = hcp_payload.get("events", [])
-            guid = hcp_payload.get("guid", "")
-            
-            merged_hcp = {
-                "transactionId": guid, "plate": "", "vehicleType": "",
-                "frontImage": "", "backImage": "", "gateName": "", "timestamp": ""
-            }
-
-            for ev in events:
-                car_info = ev.get("carInfo", {})
-                lane_info = ev.get("laneInfo", {})
-                passageway_info = ev.get("passagewayInfo", {})
-                capture_list = ev.get("captureInfoList", [])
-
-                if car_info.get("plate"):
-                    merged_hcp["plate"] = car_info.get("plate").strip().upper()
-                if car_info.get("vehicleType"):
-                    merged_hcp["vehicleType"] = car_info.get("vehicleType")
-                if car_info.get("frontImage"):
-                    merged_hcp["frontImage"] = car_info.get("frontImage")
-                if capture_list and len(capture_list) > 0 and capture_list[0].get("backimage"):
-                    merged_hcp["backImage"] = capture_list[0].get("backimage")
-                if ev.get("timeIn") and str(ev.get("timeIn")) != "-1":
-                    merged_hcp["timestamp"] = ev.get("timeIn")
-
-                l_name = lane_info.get("laneName", "").strip()
-                p_name = passageway_info.get("passagewayName", "").strip()
-                
-                # FIX: Verify text fields are not empty or invalid placeholders before committing updates
-                if l_name and p_name and l_name != "-1" and p_name != "-1":
-                    merged_hcp["gateName"] = f"{p_name} - {l_name}"
+            merged_hcp = merge_hcp_events(hcp_payload.get("events", []), hcp_payload.get("guid", ""))
 
             # HCP and admin reads arrive in this one message, so they are reconciled together onto the same row
             reconcile_sources = []

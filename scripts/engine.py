@@ -19,7 +19,7 @@ from scripts.state import (
 )
 from scripts.logging_reporter import log_event
 from scripts.payment_handler import sync_and_process_parked_vehicles
-from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token, update_api_token, note_api_response, set_api_auth_failed, update_api_base_url
+from scripts.camera_ws import websocket_listener, emit_token_status, update_ws_token, update_api_token, note_api_response, set_api_auth_failed, update_api_base_url, process_hcp_notification
 from scripts.utils import format_plate
 from scripts.api_metrics import set_broadcast_callback, set_response_hook, get_all_metrics, reset_metrics
 
@@ -609,6 +609,12 @@ def camera_webhook_receiver():
         if "xml" in content_type or raw_data.lstrip().startswith("<"):
             print_webhook_xml(raw_data, source, client_ip)
             return {"success": True, "message": "XML event received"}, 200
+
+        body = request.get_json(silent=True, force=True)
+        if isinstance(body, dict) and body.get("method") == "OnEventNotify":
+            print(f"[HCP EVENT] From IP: {client_ip}\n{raw_data}", flush=True)
+            process_hcp_notification(body)
+            return {"success": True, "message": "HCP event received"}, 200
 
         # Other non-multipart payloads (JSON fallback inspection)
         print(f"[{source} NON-MULTIPART BODY]\n{raw_data[:2000]}", flush=True)
