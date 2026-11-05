@@ -508,7 +508,7 @@ def analyze_camera_payload(payload_package):
         base64_scene_img = ""
         
         for file_key, file_item in files.items():
-            if file_item["type"] == "IMAGE":
+            if file_item["type"] == "IMAGE" and GLOBAL_CONFIG.get("include_images", True):
                 b64_data = base64.b64encode(file_item["data"]).decode('utf-8')
                 data_uri = f"data:image/jpeg;base64,{b64_data}"
                 

@@ -202,8 +202,10 @@ def merge_hcp_events(events, guid=""):
         passageway_info = ev.get("passagewayInfo", {})
         capture_list = ev.get("captureInfoList", [])
 
-        if car_info.get("plate"):
-            merged_hcp["plate"] = car_info.get("plate").strip().upper()
+        # An Unknown read can't be matched to a row, so it counts as no plate
+        plate = (car_info.get("plate") or "").strip().upper()
+        if plate and plate != "UNKNOWN":
+            merged_hcp["plate"] = plate
         if car_info.get("vehicleType"):
             merged_hcp["vehicleType"] = car_info.get("vehicleType")
         if car_info.get("frontImage"):

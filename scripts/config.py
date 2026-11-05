@@ -58,6 +58,8 @@ GLOBAL_CONFIG = {
     # Disposition table: separate Exit plate column, optionally with exit rows right-aligned
     "split_exit_layout": True,
     "exit_rows_right_aligned": True,
+    # Keep the images LPR cameras send. Off: rows still get the plate reads, with no camera images stored or shown.
+    "include_images": True,
     # Server addresses (editable on the dashboard). Ports only take effect after a restart.
     "servers": {
         "api_base_url": API_BASE_URL,
