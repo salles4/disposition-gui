@@ -1074,17 +1074,20 @@ const kpiFilteredList = computed(() => {
 })
 
 const activeStats = computed(() => {
-  const stats = { matched: 0, corrected: 0, mismatch: 0, partial: 0, total: 0, ticketRouted: 0 }
+  const stats = { total: 0, ticketRouted: 0, checkEligible: 0, checked: 0, barrierGaps: [] }
   kpiFilteredList.value.forEach(row => {
-    const info = getValidationInfo(row)
-    const status = info.status
-    if (stats[status] !== undefined) {
-      stats[status]++
-    }
     stats.total++
-    if (getTicketingDecision(row) === 'TICKET') {
+    const isTicket = getTicketingDecision(row) === 'TICKET'
+    if (isTicket) {
       stats.ticketRouted++
     }
+    // server_saved stays empty until the check has run, so rows still waiting don't drag the percentage down
+    if (!isTicket && getRowDirection(row) === 'entry' && row.server_saved != null) {
+      stats.checkEligible++
+      if (row.server_saved) stats.checked++
+    }
+    const gap = getBarrierGapSeconds(row)
+    if (gap !== null) stats.barrierGaps.push(gap)
   })
   return stats
 })
@@ -1096,14 +1099,14 @@ const getPercentage = (count, total) => {
 
 const kpiCards = computed(() => {
   const s = activeStats.value
-  const pct = (n) => getPercentage(n, s.total)
+  const gaps = s.barrierGaps
+  const barrierValue = (seconds) => gaps.length ? `${seconds()}s` : '—'
   return [
-    { key: 'total', cls: 'stat-total', icon: 'mdi-database-outline', value: s.total, tip: 'Total Streams' },
-    { key: 'matched', cls: 'stat-matched', icon: 'mdi-check-circle-outline', value: s.matched, tip: `Matched (${pct(s.matched)})` },
-    { key: 'partial', cls: 'stat-partial', icon: 'mdi-clock-outline', value: s.partial, tip: `Partial (${pct(s.partial)})` },
-    { key: 'corrected', cls: 'stat-corrected', icon: 'mdi-alert-decagram-outline', value: s.corrected, tip: `Auto-Resolved (${pct(s.corrected)})` },
-    { key: 'mismatch', cls: 'stat-mismatch', icon: 'mdi-alert-circle-outline', value: s.mismatch, tip: `Mismatch (${pct(s.mismatch)})` },
-    { key: 'ticketed', cls: 'stat-ticketed', icon: 'mdi-ticket-confirmation-outline', value: s.ticketRouted, tip: `Ticket Process (${pct(s.ticketRouted)})` },
+    { key: 'barrierAvg', cls: 'stat-barrier', icon: 'mdi-timer-outline', value: barrierValue(() => (gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length).toFixed(1)), tip: `Avg Barrier Time (${gaps.length} rows)` },
+    { key: 'barrierMin', cls: 'stat-barrier', icon: 'mdi-arrow-down-bold-outline', value: barrierValue(() => Math.min(...gaps)), tip: 'Min Barrier Time' },
+    { key: 'barrierMax', cls: 'stat-barrier', icon: 'mdi-arrow-up-bold-outline', value: barrierValue(() => Math.max(...gaps)), tip: 'Max Barrier Time' },
+    { key: 'ticketed', cls: 'stat-ticketed', icon: 'mdi-ticket-confirmation-outline', value: s.ticketRouted, tip: `Ticket Process (${getPercentage(s.ticketRouted, s.total)})` },
+    { key: 'checked', cls: 'stat-checked', icon: 'mdi-check-circle-outline', value: s.checkEligible ? getPercentage(s.checked, s.checkEligible) : '—', tip: `Entries With Server Check, Excl. Ticket (${s.checked}/${s.checkEligible})` },
   ]
 })
 
@@ -1961,24 +1964,13 @@ onUnmounted(() => {
 }
 
 /* Color accents for cards */
-.stat-total .icon { color: #888; }
-.stat-total { border-color: rgba(255, 255, 255, 0.1); }
+.stat-checked .icon { color: #28a745; }
+.stat-checked { border-color: rgba(40, 167, 69, 0.25); background: rgba(40, 167, 69, 0.02); }
+.stat-checked:hover { border-color: rgba(40, 167, 69, 0.5); background: rgba(40, 167, 69, 0.05); }
 
-.stat-matched .icon { color: #28a745; }
-.stat-matched { border-color: rgba(40, 167, 69, 0.25); background: rgba(40, 167, 69, 0.02); }
-.stat-matched:hover { border-color: rgba(40, 167, 69, 0.5); background: rgba(40, 167, 69, 0.05); }
-
-.stat-corrected .icon { color: #00e5ff; }
-.stat-corrected { border-color: rgba(0, 229, 255, 0.25); background: rgba(0, 229, 255, 0.02); }
-.stat-corrected:hover { border-color: rgba(0, 229, 255, 0.5); background: rgba(0, 229, 255, 0.05); }
-
-.stat-mismatch .icon { color: #f43f5e; }
-.stat-mismatch { border-color: rgba(244, 63, 94, 0.25); background: rgba(244, 63, 94, 0.02); }
-.stat-mismatch:hover { border-color: rgba(244, 63, 94, 0.5); background: rgba(244, 63, 94, 0.05); }
-
-.stat-partial .icon { color: #eab308; }
-.stat-partial { border-color: rgba(234, 179, 8, 0.25); background: rgba(234, 179, 8, 0.02); }
-.stat-partial:hover { border-color: rgba(234, 179, 8, 0.5); background: rgba(234, 179, 8, 0.05); }
+.stat-barrier .icon { color: #eab308; }
+.stat-barrier { border-color: rgba(234, 179, 8, 0.25); background: rgba(234, 179, 8, 0.02); }
+.stat-barrier:hover { border-color: rgba(234, 179, 8, 0.5); background: rgba(234, 179, 8, 0.05); }
 
 .stat-ticketed .icon { color: #f43f5e; }
 .stat-ticketed { border-color: rgba(244, 63, 94, 0.25); background: rgba(244, 63, 94, 0.02); }
@@ -2316,12 +2308,9 @@ onUnmounted(() => {
 .light .stat-card { background: #fff; }
 .light .stat-card:hover, .light .stat-card:focus-visible { background: #f8fafc; }
 .light .stat-card::after { background: #111827; color: #fff; border-color: #111827; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25); }
-.light .stat-total { border-color: #cbd2d9; }
-.light .stat-total .icon { color: #4b5563; }
-.light .stat-matched .icon { color: #15803d; }
-.light .stat-corrected .icon { color: #0e7490; }
-.light .stat-partial .icon { color: #a16207; }
-.light .stat-mismatch .icon, .light .stat-ticketed .icon { color: #be123c; }
+.light .stat-checked .icon { color: #15803d; }
+.light .stat-barrier .icon { color: #a16207; }
+.light .stat-ticketed .icon { color: #be123c; }
 
 /* Card, filters, search */
 .light .live-actions-card { background: #fff; border-color: #d8dde3; }

@@ -562,12 +562,29 @@ def analyze_camera_payload(payload_package):
     except Exception as e:
         print(f"[PARSER EXCEPTION] Failed parsing camera multipart: {str(e)}", flush=True)
 
+def print_webhook_xml(xml_str, source, client_ip, filename=None):
+    """Prints and saves an XML event. source is CAMERA for registered camera IPs, NON-CAMERA for any other sender (e.g. HCP)."""
+    try:
+        print(f"--- [{source} XML PAYLOAD: {filename or 'request body'}] From IP: {client_ip} ---", flush=True)
+        print(xml_str, flush=True)
+        print("------------------------------------------", flush=True)
+    except Exception:
+        pass  # A console that can't encode the XML must not lose the camera event
+    try:
+        save_name = "last_camera_event.xml" if source == "CAMERA" else "last_non_camera_event.xml"
+        save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", save_name)
+        with open(save_path, "w", encoding="utf-8") as xf:
+            xf.write(xml_str)
+    except Exception:
+        pass
+
 @app.route('/api/webhooks/camera', methods=['POST'])
 def camera_webhook_receiver():
     try:
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         content_type = request.content_type.lower() if request.content_type else ""
-        print(f"\n[CAMERA WEBHOOK EVENT RECEIVED] Port: {request.environ.get('SERVER_PORT')} | From IP: {client_ip} | Content-Type: {content_type}", flush=True)
+        source = "CAMERA" if find_camera(client_ip) else "NON-CAMERA"
+        print(f"\n[{source} WEBHOOK EVENT RECEIVED] Port: {request.environ.get('SERVER_PORT')} | From IP: {client_ip} | Content-Type: {content_type}", flush=True)
 
         if "multipart/form-data" in content_type:
             extracted_files = {}
@@ -578,29 +595,23 @@ def camera_webhook_receiver():
                 if (filename and filename.endswith('.xml')) or ('xml' in (file_obj.content_type or '')):
                     xml_str = raw_bytes.decode('utf-8', errors='ignore')
                     extracted_files[file_key] = {"filename": filename, "type": "XML", "data": xml_str}
-                    try:
-                        print(f"--- [CAMERA XML PAYLOAD: {filename}] ---", flush=True)
-                        print(xml_str, flush=True)
-                        print("------------------------------------------", flush=True)
-                    except Exception:
-                        pass  # A console that can't encode the XML must not lose the camera event
-                    try:
-                        save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "last_camera_event.xml")
-                        with open(save_path, "w", encoding="utf-8") as xf:
-                            xf.write(xml_str)
-                    except Exception:
-                        pass
+                    print_webhook_xml(xml_str, source, client_ip, filename)
                 else:
                     byte_len = len(raw_bytes)
                     extracted_files[file_key] = {"filename": filename, "type": "IMAGE", "data": raw_bytes}
-                    print(f"[CAMERA ATTACHMENT: {filename or file_key}] Size: {byte_len} bytes", flush=True)
+                    print(f"[{source} ATTACHMENT: {filename or file_key}] Size: {byte_len} bytes", flush=True)
 
             threading.Thread(target=analyze_camera_payload, args=({"type": "MULTIPART", "files": extracted_files},), daemon=True).start()
             return {"success": True, "message": "Multipart camera buffers streamed successfully"}, 200
 
-        # Non-multipart payloads (JSON / raw XML fallback inspection)
+        # Raw XML is printed in full and accepted so the sender doesn't treat it as a failed delivery
         raw_data = request.get_data(as_text=True)
-        print(f"[CAMERA NON-MULTIPART BODY]\n{raw_data[:2000]}", flush=True)
+        if "xml" in content_type or raw_data.lstrip().startswith("<"):
+            print_webhook_xml(raw_data, source, client_ip)
+            return {"success": True, "message": "XML event received"}, 200
+
+        # Other non-multipart payloads (JSON fallback inspection)
+        print(f"[{source} NON-MULTIPART BODY]\n{raw_data[:2000]}", flush=True)
         return {"success": False, "error": "Unsupported media type payload structure"}, 400
     except Exception as e:
         print(f"[CAMERA WEBHOOK ERROR] {e}", flush=True)
