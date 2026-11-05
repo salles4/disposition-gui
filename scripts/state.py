@@ -491,7 +491,8 @@ def update_reconciliation_fields(plate_key, date_str, fields):
 
     return updated_record
 
-SERVER_SAVE_CHECK_DELAY = 45  # seconds after first detection before asking the server about an entry
+SERVER_SAVE_CHECK_DELAY = 45  # seconds after first detection before asking the server about an entry or exit
+SERVER_EXIT_MATCH_WINDOW = 600  # seconds; a further time_out belongs to another visit of the same plate
 
 def summarize_plate_no_reply(res_json, queried_plate, normal_response):
     """The /plate-no fields shown under Admin Read. The full reply also carries store/billing info we don't need."""
@@ -545,12 +546,69 @@ def lookup_plate_on_server(plate):
         found = any(k in text for k in ["already paid", "payment successful", "enter park"])
     return summarize_plate_no_reply(res_json, plate, normal_response) if found else None
 
-def check_entry_saved_on_server(plate_key):
+def summarize_payment_report_row(row, queried_plate):
+    """The /reports/payment fields kept on the row. The full reply also carries VAT and store info we don't need."""
+    summary = {
+        "queried_plate": queried_plate,
+        "normal_response": True,
+        "checked_at": datetime.now().isoformat(),
+        "plate_no": row.get("plate_no"),
+        "invoice_no": row.get("invoice_no"),
+        "transaction_id": row.get("transaction_id"),
+        "ticket_no": row.get("ticket_no"),
+        "customer_type": row.get("customer_type"),
+        "vehicle_type": row.get("vehicle_type"),
+        "time_in": row.get("time_in"),
+        "time_out": row.get("time_out"),
+        "time_paid": row.get("time_paid"),
+        "entry_point": row.get("entry_point"),
+        "exit_point": row.get("exit_point"),
+        "amount_paid": row.get("amount_paid"),
+        "payment_method": row.get("payment_method"),
+        "payment_channel": row.get("payment_channel"),
+    }
+    return {k: v for k, v in summary.items() if v not in (None, "")}
+
+def lookup_exit_on_server(plate, first_seen):
+    """Summary of the /api/reports/payment row for this exit, else None."""
+    seen_dt = datetime.fromisoformat(first_seen).replace(tzinfo=None)
+    res = requests.get(f"{config.API_BASE_URL}/api/reports/payment", params={
+        "search": plate,
+        "page": 1,
+        "per_page": 15,
+        "limit": 15,
+        "offset": 0,
+        "sort_by": "time_out",
+        "sort_order": "desc",
+        # Runs to the day of the check so an exit just past midnight is still in range
+        "start_date": f"{seen_dt:%Y-%m-%d} 00:00:00",
+        "end_date": f"{datetime.now():%Y-%m-%d} 23:59:59",
+    }, headers=config.ADMIN_HEADERS, timeout=5)
+    res.raise_for_status()
+    res_json = res.json()
+    rows = res_json.get("data") if isinstance(res_json, dict) else None
+
+    # search is a partial match, so a row only counts with the exact plate and a time_out close to this detection
+    wanted_plate = plate.replace(" ", "").upper()
+    best_row, best_gap = None, SERVER_EXIT_MATCH_WINDOW
+    for row in rows if isinstance(rows, list) else []:
+        if (row.get("plate_no") or "").replace(" ", "").upper() != wanted_plate:
+            continue
+        try:
+            gap = abs((datetime.strptime(row.get("time_out") or "", "%Y-%m-%d %H:%M:%S") - seen_dt).total_seconds())
+        except ValueError:
+            continue
+        if gap <= best_gap:
+            best_row, best_gap = row, gap
+    return summarize_payment_report_row(best_row, plate) if best_row else None
+
+def check_saved_on_server(plate_key):
     with reconciliation_lock:
         record = pending_reconciliations.get(plate_key) or next(
             (r for r in daily_reconciliation_history if r.get("plate_key") == plate_key), None)
-        if not record or (record.get("direction") or "entry").lower() != "entry":
+        if not record:
             return
+        is_exit = (record.get("direction") or "entry").lower() == "exit"
         first_seen = record.get("first_seen")
         chosen_plate = record.get("chosen_plate")
 
@@ -560,7 +618,7 @@ def check_entry_saved_on_server(plate_key):
     server_record = None
     for plate in candidates:
         try:
-            server_record = lookup_plate_on_server(plate)
+            server_record = lookup_exit_on_server(plate, first_seen) if is_exit else lookup_plate_on_server(plate)
             if server_record:
                 break
         except Exception as e:
@@ -574,7 +632,7 @@ def check_entry_saved_on_server(plate_key):
         socketio.emit('reconciled_vehicle_updated', updated_record, to='admin_room')
 
 def schedule_server_save_check(plate_key):
-    timer = threading.Timer(SERVER_SAVE_CHECK_DELAY, check_entry_saved_on_server, args=(plate_key,))
+    timer = threading.Timer(SERVER_SAVE_CHECK_DELAY, check_saved_on_server, args=(plate_key,))
     timer.daemon = True
     timer.start()
 

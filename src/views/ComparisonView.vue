@@ -202,6 +202,7 @@
               <!-- Admin Read column replaced by Server Read (/plate-no lookup)
               <th class="col-header-ops"><span class="mdi mdi-account-shield"></span> Admin Read</th>
               -->
+              <th class="col-header-disposition"><span class="mdi mdi-gavel"></span> Disposition</th>
               <th class="col-header-ops"><span class="mdi mdi-server"></span> Server Read</th>
               <th class="col-header-decision"><span class="mdi mdi-swap-horizontal-bold"></span> Process</th>
               <!-- Hidden for now: Validation column
@@ -213,7 +214,7 @@
           <!-- Rows slide in, and glide into place when new ones are inserted or filters change -->
           <TransitionGroup tag="tbody" name="row">
             <tr v-if="visibleComparisonList.length === 0" key="__empty__">
-              <td :colspan="splitExitLayout ? 8 : 7" class="no-data-row">
+              <td :colspan="splitExitLayout ? 9 : 8" class="no-data-row">
                 <span v-if="searchQuery" class="mdi mdi-database-search" style="margin-right: 6px;"></span>
                 <span v-else class="mdi mdi-loading mdi-spin" style="margin-right: 6px;"></span>
                 {{ searchQuery ? 'No records match search filter' : 'Awaiting vehicle streaming payloads...' }}
@@ -231,8 +232,8 @@
                 <template v-if="!splitExitLayout || getRowDirection(row) !== 'exit'">
                 <div class="plate-code-display" style="font-size: 1.05rem;">
                   {{ getRowPlate(row) }}
-                  <span v-if="row.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
-                  <span v-else-if="awaitingServerCheck.has(row.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" title="Waiting to check server (/plate-no)"></span>
+                  <span v-if="row.server_saved" class="mdi mdi-check-circle server-saved-check" :title="`Found on server (${getServerSource(row)})`"></span>
+                  <span v-else-if="awaitingServerCheck.has(row.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" :title="`Waiting to check server (${getServerSource(row)})`"></span>
                 </div>
                 <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
                   <span v-if="getRowLocationLabel(row)" class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
@@ -320,6 +321,12 @@
               </td>
               -->
 
+              <td class="col-cell-disposition" :title="row.decision_reason">
+                <Transition name="cell-fade" mode="out-in">
+                <span :key="row.disposition || 'NA'" :class="['dispo-tag', getDispositionClass(row)]">{{ row.disposition || 'NA' }}</span>
+                </Transition>
+              </td>
+
               <td class="col-cell-ops">
                 <Transition name="cell-fade" mode="out-in">
                 <div v-if="hasNormalServerRecord(row)" class="source-cell-block">
@@ -327,7 +334,10 @@
                   <div class="nested-type-row">
                     <span class="type-text text-purple">{{ row.server_record.vehicle_type }}</span>
                   </div>
-                  <div v-if="isServerEntryStale(row)" class="cell-timestamp server-entry-stale" title="Server entry is more than 24 hours before this detection">
+                  <div v-if="getRowDirection(row) === 'exit'" class="cell-timestamp text-muted">
+                    <span class="mdi mdi-clock-outline"></span> Exit {{ formatTime(row.server_record.time_out) }}
+                  </div>
+                  <div v-else-if="isServerEntryStale(row)" class="cell-timestamp server-entry-stale" title="Server entry is more than 24 hours before this detection">
                     <span class="mdi mdi-alert"></span> Entry {{ formatServerEntry(row) }}
                   </div>
                   <div v-else class="cell-timestamp text-muted">
@@ -357,7 +367,11 @@
 
               <td v-if="splitExitLayout" class="col-cell-exit text-bold text-highlight">
                 <template v-if="getRowDirection(row) === 'exit'">
-                  <div class="plate-code-display" style="font-size: 1.05rem;">{{ getRowPlate(row) }}</div>
+                  <div class="plate-code-display" style="font-size: 1.05rem;">
+                    {{ getRowPlate(row) }}
+                    <span v-if="row.server_saved" class="mdi mdi-check-circle server-saved-check" :title="`Found on server (${getServerSource(row)})`"></span>
+                    <span v-else-if="awaitingServerCheck.has(row.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" :title="`Waiting to check server (${getServerSource(row)})`"></span>
+                  </div>
                   <div style="margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap;">
                     <span v-if="getRowLocationLabel(row)" class="badge-sm badge-gate" style="background: rgba(255,255,255,0.06); color: #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
                       {{ getRowLocationLabel(row) }}
@@ -422,8 +436,8 @@
               <span class="modal-eyebrow"><span class="mdi mdi-image-multiple"></span> Deep Audit Profile Explorer</span>
               <div class="modal-title-row">
                 <span class="modal-plate-title">{{ getRowPlate(selectedVehicle) }}</span>
-                <span v-if="selectedVehicle.server_saved" class="mdi mdi-check-circle server-saved-check" title="Found on server (/plate-no)"></span>
-                <span v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" title="Waiting to check server (/plate-no)"></span>
+                <span v-if="selectedVehicle.server_saved" class="mdi mdi-check-circle server-saved-check" :title="`Found on server (${getServerSource(selectedVehicle)})`"></span>
+                <span v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending" :title="`Waiting to check server (${getServerSource(selectedVehicle)})`"></span>
                 <span v-if="getRowLocationLabel(selectedVehicle)" class="modal-chip">{{ getRowLocationLabel(selectedVehicle) }}</span>
                 <span :class="['modal-chip', getRowDirection(selectedVehicle) === 'exit' ? 'chip-exit' : 'chip-entry']">{{ selectedVehicle.direction || 'entry' }}</span>
                 <span class="modal-first-seen"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.first_seen) }}</span>
@@ -547,12 +561,13 @@
                   <div><dt>Percentage Factor</dt><dd>{{ selectedVehicle.core_event.percentage ? selectedVehicle.core_event.percentage + '%' : 'N/A' }}</dd></div>
                 </dl>
                 <div v-else class="no-data-msg">No entries logged.</div>
-                <div v-if="getRowDirection(selectedVehicle) === 'entry'" class="server-record">
+                <div class="server-record">
                   <div class="server-record-header">
                     <span v-if="selectedVehicle.server_saved" class="mdi mdi-check-circle server-saved-check"></span>
                     <span v-else-if="awaitingServerCheck.has(selectedVehicle.plate_key)" class="mdi mdi-loading mdi-spin server-check-pending"></span>
                     <span v-else-if="selectedVehicle.server_saved === false" class="mdi mdi-close-circle server-not-found"></span>
-                    Server Record (/plate-no)
+                    Server Record ({{ getServerSource(selectedVehicle) }})
+                    <span v-if="selectedVehicle.server_record && selectedVehicle.server_record.time_out" class="source-card-time"><span class="mdi mdi-clock-outline"></span> Exit {{ formatTime(selectedVehicle.server_record.time_out) }}</span>
                     <span v-if="selectedVehicle.server_record && selectedVehicle.server_record.entry" :class="['source-card-time', { 'server-entry-stale': isServerEntryStale(selectedVehicle) }]" :title="isServerEntryStale(selectedVehicle) ? 'Server entry is more than 24 hours before this detection' : ''"><span :class="['mdi', isServerEntryStale(selectedVehicle) ? 'mdi-alert' : 'mdi-clock-outline']"></span> Entry {{ formatServerEntry(selectedVehicle) }}</span>
                   </div>
                   <dl v-if="selectedVehicle.server_record" class="source-fields">
@@ -767,7 +782,8 @@ const EXPORT_COLUMNS = [
   { header: "Server Found", width: 14, value: getExportServerFound },
   { header: "Server Plate", width: 15, value: (row) => row.server_record?.plate_no },
   { header: "Server Vehicle Type", width: 20, value: (row) => row.server_record?.vehicle_type },
-  { header: "Server Entry", width: 21, value: (row) => row.server_record?.entry },
+  { header: "Server Entry", width: 21, value: (row) => row.server_record?.entry || row.server_record?.time_in },
+  { header: "Server Exit", width: 21, value: (row) => row.server_record?.time_out },
   { header: "Server Ticket No", width: 18, value: (row) => row.server_record?.ticket_no },
   { header: "Server Reference No", width: 20, value: (row) => row.server_record?.reference_no },
   { header: "Server Reason", width: 30, value: (row) => row.server_record?.reason || row.server_record?.message }
@@ -889,6 +905,12 @@ const updateTicketingDecision = (row, decision) => {
 
 const getRowDirection = (row) => (row.direction || 'entry').toLowerCase()
 
+// Where the backend looks the row up: entries in /plate-no, exits in the payment report
+const getServerSource = (row) => getRowDirection(row) === 'exit' ? '/reports/payment' : '/plate-no'
+
+// "Car LP" -> "car_lp", the .dispo-tag style for that result
+const getDispositionClass = (row) => (row.disposition || 'NA').toLowerCase().replace(/\s+/g, '_')
+
 // Server Read only shows a normal /plate-no reply; message-only replies (already paid, etc.) stay in the details modal
 // Records saved before the backend sent normal_response: a reply with an entry time and no message/reason was normal
 const hasNormalServerRecord = (row) => {
@@ -932,17 +954,25 @@ const formatServerEntry = (row) => {
   return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${formatTime(entry)}`
 }
 
-// /plate-no fields the backend keeps on the record (server_record), in display order; entry time sits in the section header
+// Fields the backend keeps on the record (server_record), in display order; entry/exit time sits in the section header
 const SERVER_RECORD_FIELDS = [
   { key: 'plate_no', label: 'Plate' },
   { key: 'reference_no', label: 'Reference No' },
+  { key: 'invoice_no', label: 'Invoice No' },
   { key: 'ticket_no', label: 'Ticket No' },
   { key: 'transaction_id', label: 'Transaction ID' },
   { key: 'vehicle_type', label: 'Vehicle Type' },
   { key: 'customer_type', label: 'Customer Type' },
   { key: 'gate_id', label: 'Gate', format: (v) => `Gate ${v}` },
+  { key: 'entry_point', label: 'Entry Point' },
+  { key: 'exit_point', label: 'Exit Point' },
+  { key: 'time_in', label: 'Time In' },
+  { key: 'time_paid', label: 'Time Paid' },
   { key: 'parking_duration', label: 'Parking Duration' },
   { key: 'total_amount', label: 'Total Amount' },
+  { key: 'amount_paid', label: 'Amount Paid' },
+  { key: 'payment_method', label: 'Payment Method' },
+  { key: 'payment_channel', label: 'Payment Channel' },
   { key: 'reason', label: 'Reason' },
   { key: 'message', label: 'Message' },
   { key: 'queried_plate', label: 'Queried As' },
@@ -955,14 +985,14 @@ const selectedServerRecordFields = computed(() => {
     .map(field => ({ ...field, value: field.format ? field.format(record[field.key]) : record[field.key] }))
 })
 
-// The backend asks /plate-no about each entry 45s after first detection; spin until server_saved lands.
+// The backend asks the server about each row 45s after first detection; spin until server_saved lands.
 // Capped so a check lost to a backend restart doesn't spin forever.
 const SERVER_CHECK_WINDOW_MS = 60000
 const awaitingServerCheck = ref(new Set())
 const refreshAwaitingServerCheck = () => {
   const now = Date.now()
   const keys = comparisonList.value
-    .filter(row => row.server_saved == null && getRowDirection(row) === 'entry' && now - new Date(row.first_seen).getTime() < SERVER_CHECK_WINDOW_MS)
+    .filter(row => row.server_saved == null && now - new Date(row.first_seen).getTime() < SERVER_CHECK_WINDOW_MS)
     .map(row => row.plate_key)
   // Only swap the Set when membership changes, so the table isn't re-rendered every tick
   const current = awaitingServerCheck.value
@@ -1074,7 +1104,7 @@ const kpiFilteredList = computed(() => {
 })
 
 const activeStats = computed(() => {
-  const stats = { total: 0, ticketRouted: 0, checkEligible: 0, checked: 0, barrierGaps: [] }
+  const stats = { total: 0, ticketRouted: 0, checkEligible: 0, checked: 0, exitCheckEligible: 0, exitChecked: 0, barrierGaps: [] }
   kpiFilteredList.value.forEach(row => {
     stats.total++
     const isTicket = getTicketingDecision(row) === 'TICKET'
@@ -1082,9 +1112,14 @@ const activeStats = computed(() => {
       stats.ticketRouted++
     }
     // server_saved stays empty until the check has run, so rows still waiting don't drag the percentage down
-    if (!isTicket && getRowDirection(row) === 'entry' && row.server_saved != null) {
-      stats.checkEligible++
-      if (row.server_saved) stats.checked++
+    if (!isTicket && row.server_saved != null) {
+      if (getRowDirection(row) === 'exit') {
+        stats.exitCheckEligible++
+        if (row.server_saved) stats.exitChecked++
+      } else {
+        stats.checkEligible++
+        if (row.server_saved) stats.checked++
+      }
     }
     const gap = getBarrierGapSeconds(row)
     if (gap !== null) stats.barrierGaps.push(gap)
@@ -1107,6 +1142,7 @@ const kpiCards = computed(() => {
     { key: 'barrierMax', cls: 'stat-barrier', icon: 'mdi-arrow-up-bold-outline', value: barrierValue(() => Math.max(...gaps)), tip: 'Max Barrier Time' },
     { key: 'ticketed', cls: 'stat-ticketed', icon: 'mdi-ticket-confirmation-outline', value: s.ticketRouted, tip: `Ticket Process (${getPercentage(s.ticketRouted, s.total)})` },
     { key: 'checked', cls: 'stat-checked', icon: 'mdi-check-circle-outline', value: s.checkEligible ? getPercentage(s.checked, s.checkEligible) : '—', tip: `Entries With Server Check, Excl. Ticket (${s.checked}/${s.checkEligible})` },
+    { key: 'exitChecked', cls: 'stat-checked', icon: 'mdi-exit-run', value: s.exitCheckEligible ? getPercentage(s.exitChecked, s.exitCheckEligible) : '—', tip: `Exits With Server Check, Excl. Ticket (${s.exitChecked}/${s.exitCheckEligible})` },
   ]
 })
 
@@ -1550,9 +1586,11 @@ onUnmounted(() => {
 .col-cell-back { border-left: 1px solid #2d2d2d; background: rgba(40, 167, 69, 0.005); }
 .col-cell-hik { border-left: 1px solid #2d2d2d; background: rgba(255, 152, 0, 0.005); }
 .col-cell-ops { border-left: 1px solid #2d2d2d; background: rgba(255, 255, 255, 0.002); }
+.col-cell-disposition { border-left: 1px solid #2d2d2d; text-align: center; vertical-align: middle; }
+.col-header-disposition { text-align: center; }
 
 .dispo-tag { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-align: center; border: 1px solid transparent; min-width: 70px; }
-.dispo-tag.na { background: rgba(255,255,255,0.05); color: #777; }
+.dispo-tag.na, .dispo-tag.ignored { background: rgba(255,255,255,0.05); color: #777; }
 .dispo-tag.ticket { background: rgba(244, 63, 94, 0.15); color: #f43f5e; border-color: rgba(244, 63, 94, 0.2); }
 .dispo-tag.car_lp { background: rgba(23, 162, 184, 0.15); color: #17a2b8; border-color: rgba(23, 162, 184, 0.2); }
 .dispo-tag.motor_lp { background: rgba(234, 179, 8, 0.15); color: #eab308; border-color: rgba(234, 179, 8, 0.2); }
@@ -2333,7 +2371,7 @@ onUnmounted(() => {
 .light .comparison-table th { background-color: #e5e8ec; color: #374151; border-bottom-color: #cbd2d9; box-shadow: inset 0 -2px 0 #cbd2d9; }
 .light .comparison-table td { border-bottom-color: #e5e8ec; }
 .light .col-cell-front, .light .col-cell-back, .light .col-cell-hik,
-.light .col-cell-ops, .light .col-cell-decision, .light .col-cell-exit { border-left-color: #e5e8ec; }
+.light .col-cell-disposition, .light .col-cell-ops, .light .col-cell-decision, .light .col-cell-exit { border-left-color: #e5e8ec; }
 .light .clickable-row:hover { background: #f1f5f9 !important; }
 .light .clickable-row:active { background: #e2e8f0 !important; }
 .light .clickable-row:hover td:first-child { box-shadow: inset 3px 0 0 #0e7490; }
@@ -2368,7 +2406,7 @@ onUnmounted(() => {
 .light .badge-dir-entry { background: rgba(21, 128, 61, 0.12) !important; color: #15803d !important; }
 .light .badge-dir-exit { background: rgba(14, 116, 144, 0.12) !important; color: #0e7490 !important; }
 
-.light .dispo-tag.na { background: #f3f4f6; color: #4b5563; }
+.light .dispo-tag.na, .light .dispo-tag.ignored { background: #f3f4f6; color: #4b5563; }
 .light .dispo-tag.ticket, .light .decision-tag.ticket { background: rgba(190, 18, 60, 0.1); color: #be123c; border-color: rgba(190, 18, 60, 0.25); }
 .light .decision-tag.ignored, .light .decision-tag.na { background: rgba(71, 85, 105, 0.08); color: #475569; border-color: rgba(71, 85, 105, 0.2); }
 .light .dispo-tag.car_lp, .light .decision-tag.system { background: rgba(14, 116, 144, 0.1); color: #0e7490; border-color: rgba(14, 116, 144, 0.25); }
