@@ -202,7 +202,7 @@
               <!-- Admin Read column replaced by Server Read (/plate-no lookup)
               <th class="col-header-ops"><span class="mdi mdi-account-shield"></span> Admin Read</th>
               -->
-              <th class="col-header-disposition"><span class="mdi mdi-gavel"></span> Disposition</th>
+              <th><span class="mdi mdi-gavel"></span> Disposition</th>
               <th class="col-header-ops"><span class="mdi mdi-server"></span> Server Read</th>
               <th class="col-header-decision"><span class="mdi mdi-swap-horizontal-bold"></span> Process</th>
               <!-- Hidden for now: Validation column
@@ -323,7 +323,25 @@
 
               <td class="col-cell-disposition" :title="row.decision_reason">
                 <Transition name="cell-fade" mode="out-in">
-                <span :key="row.disposition || 'NA'" :class="['dispo-tag', getDispositionClass(row)]">{{ row.disposition || 'NA' }}</span>
+                <div v-if="getChosenRead(row)" :key="`${row.chosen_camera}-${row.chosen_plate}-${getTicketingDecision(row)}-${getTicketShortReason(row)}`" class="source-cell-block">
+                  <div :class="['plate-badge', row.chosen_camera === 'front' ? 'badge-front' : 'badge-back']">{{ row.chosen_plate }}</div>
+                  <div class="nested-type-row">
+                    <span class="type-text">{{ getChosenRead(row).vehicle_type }}</span>
+                  </div>
+                  <div class="cell-timestamp text-muted">
+                    <span :class="['mdi', row.chosen_camera === 'front' ? 'mdi-camera' : 'mdi-camera-rear']"></span> {{ getExportChosenCamera(row) }} Camera
+                  </div>
+                  <div v-if="getTicketingDecision(row) === 'TICKET'" class="decision-cell">
+                    <span class="decision-tag ticket">Ticket</span>
+                    <span class="decision-reason">{{ getTicketShortReason(row) }}</span>
+                  </div>
+                </div>
+                <!-- A manual Ticket can be set on a row with no camera read -->
+                <div v-else-if="getTicketingDecision(row) === 'TICKET'" key="ticket" class="decision-cell">
+                  <span class="decision-tag ticket">Ticket</span>
+                  <span class="decision-reason">{{ getTicketShortReason(row) }}</span>
+                </div>
+                <span v-else key="none" class="text-muted">—</span>
                 </Transition>
               </td>
 
@@ -764,6 +782,7 @@ const EXPORT_COLUMNS = [
   { header: "Back Cam Vehicle Type", width: 22, value: (row) => row.back_camera?.vehicle_type },
   { header: "Back Cam Raw Type", width: 20, value: (row) => row.back_camera?.raw_type_received },
   { header: "Back Cam Confidence", width: 20, value: (row) => getExportConfidence(row.back_camera) },
+  { header: "Chosen Vehicle Type", width: 20, value: (row) => getChosenRead(row)?.vehicle_type },
   { header: "Chosen Camera", width: 15, value: getExportChosenCamera },
   { header: "HCP Plate", width: 15, value: (row) => row.hikcentral?.plate },
   { header: "HCP Vehicle Type", width: 18, value: (row) => row.hikcentral?.vehicleType },
@@ -908,8 +927,8 @@ const getRowDirection = (row) => (row.direction || 'entry').toLowerCase()
 // Where the backend looks the row up: entries in /plate-no, exits in the payment report
 const getServerSource = (row) => getRowDirection(row) === 'exit' ? '/reports/payment' : '/plate-no'
 
-// "Car LP" -> "car_lp", the .dispo-tag style for that result
-const getDispositionClass = (row) => (row.disposition || 'NA').toLowerCase().replace(/\s+/g, '_')
+// The camera read the disposition picked (scripts/disposition.py); no camera read means none
+const getChosenRead = (row) => row.chosen_camera ? row[`${row.chosen_camera}_camera`] : null
 
 // Server Read only shows a normal /plate-no reply; message-only replies (already paid, etc.) stay in the details modal
 // Records saved before the backend sent normal_response: a reply with an entry time and no message/reason was normal
@@ -1586,11 +1605,12 @@ onUnmounted(() => {
 .col-cell-back { border-left: 1px solid #2d2d2d; background: rgba(40, 167, 69, 0.005); }
 .col-cell-hik { border-left: 1px solid #2d2d2d; background: rgba(255, 152, 0, 0.005); }
 .col-cell-ops { border-left: 1px solid #2d2d2d; background: rgba(255, 255, 255, 0.002); }
-.col-cell-disposition { border-left: 1px solid #2d2d2d; text-align: center; vertical-align: middle; }
-.col-header-disposition { text-align: center; }
+.col-cell-disposition { border-left: 1px solid #2d2d2d; }
+.col-cell-disposition .decision-cell { align-self: flex-start; align-items: flex-start; }
+.row-align-right .col-cell-disposition .decision-cell { align-self: flex-end; align-items: flex-end; }
 
 .dispo-tag { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-align: center; border: 1px solid transparent; min-width: 70px; }
-.dispo-tag.na, .dispo-tag.ignored { background: rgba(255,255,255,0.05); color: #777; }
+.dispo-tag.na { background: rgba(255,255,255,0.05); color: #777; }
 .dispo-tag.ticket { background: rgba(244, 63, 94, 0.15); color: #f43f5e; border-color: rgba(244, 63, 94, 0.2); }
 .dispo-tag.car_lp { background: rgba(23, 162, 184, 0.15); color: #17a2b8; border-color: rgba(23, 162, 184, 0.2); }
 .dispo-tag.motor_lp { background: rgba(234, 179, 8, 0.15); color: #eab308; border-color: rgba(234, 179, 8, 0.2); }
@@ -2406,7 +2426,7 @@ onUnmounted(() => {
 .light .badge-dir-entry { background: rgba(21, 128, 61, 0.12) !important; color: #15803d !important; }
 .light .badge-dir-exit { background: rgba(14, 116, 144, 0.12) !important; color: #0e7490 !important; }
 
-.light .dispo-tag.na, .light .dispo-tag.ignored { background: #f3f4f6; color: #4b5563; }
+.light .dispo-tag.na { background: #f3f4f6; color: #4b5563; }
 .light .dispo-tag.ticket, .light .decision-tag.ticket { background: rgba(190, 18, 60, 0.1); color: #be123c; border-color: rgba(190, 18, 60, 0.25); }
 .light .decision-tag.ignored, .light .decision-tag.na { background: rgba(71, 85, 105, 0.08); color: #475569; border-color: rgba(71, 85, 105, 0.2); }
 .light .dispo-tag.car_lp, .light .decision-tag.system { background: rgba(14, 116, 144, 0.1); color: #0e7490; border-color: rgba(14, 116, 144, 0.25); }
