@@ -1164,8 +1164,9 @@ const kpiCards = computed(() => {
     { key: 'barrierMin', cls: 'stat-barrier', icon: 'mdi-arrow-down-bold-outline', value: barrierValue(() => Math.min(...gaps)), tip: 'Min Barrier Time' },
     { key: 'barrierMax', cls: 'stat-barrier', icon: 'mdi-arrow-up-bold-outline', value: barrierValue(() => Math.max(...gaps)), tip: 'Max Barrier Time' },
     { key: 'ticketed', cls: 'stat-ticketed', icon: 'mdi-ticket-confirmation-outline', value: s.ticketRouted, tip: `Ticket Process (${getPercentage(s.ticketRouted, s.total)})` },
-    { key: 'checked', cls: 'stat-checked', icon: 'mdi-check-circle-outline', value: s.checkEligible ? getPercentage(s.checked, s.checkEligible) : '—', tip: `Entries With Server Check, Excl. Ticket (${s.checked}/${s.checkEligible})` },
-    { key: 'exitChecked', cls: 'stat-checked', icon: 'mdi-exit-run', value: s.exitCheckEligible ? getPercentage(s.exitChecked, s.exitCheckEligible) : '—', tip: `Exits With Server Check, Excl. Ticket (${s.exitChecked}/${s.exitCheckEligible})` },
+    // Server check KPIs, hidden for now
+    // { key: 'checked', cls: 'stat-checked', icon: 'mdi-check-circle-outline', value: s.checkEligible ? getPercentage(s.checked, s.checkEligible) : '—', tip: `Entries With Server Check, Excl. Ticket (${s.checked}/${s.checkEligible})` },
+    // { key: 'exitChecked', cls: 'stat-checked', icon: 'mdi-exit-run', value: s.exitCheckEligible ? getPercentage(s.exitChecked, s.exitCheckEligible) : '—', tip: `Exits With Server Check, Excl. Ticket (${s.exitChecked}/${s.exitCheckEligible})` },
   ]
 })
 
