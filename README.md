@@ -4,6 +4,37 @@ This documentation covers the architecture, data structures, and pipeline featur
 
 ---
 
+## Running as a Linux service
+
+The `parking-disposition` systemd service runs the engine, which also serves the built dashboard. It starts when the PC boots and restarts if it crashes. The dashboard is on the app port (`servers.app_port`, default 5015), not the Vite port.
+
+**Requirements:** systemd, Node.js with npm, and a working `.venv` in the project folder.
+
+**Install or reinstall** as the user who owns the project, not root. The script builds the dashboard and asks for your password when it installs the service:
+
+```bash
+bash deploy/install-service.sh
+```
+
+**After pulling new code:**
+
+```bash
+npm ci && npm run build && sudo systemctl restart parking-disposition
+```
+
+**Day to day:**
+
+```bash
+systemctl status parking-disposition        # is it running?
+journalctl -u parking-disposition -f        # follow the logs
+sudo systemctl restart parking-disposition  # restart it, e.g. after changing the app port
+sudo systemctl disable --now parking-disposition  # stop it and don't start it on boot
+```
+
+Stop the service before running `python scripts/engine.py` by hand, since both use the same port. The teller service (`scripts/teller_service.py`) isn't included, so start it separately if you use real device payments.
+
+---
+
 ## 1. System Architecture
 
 The pipeline synchronizes plate recognition events across multiple sources (HikCentral, local cameras, and core ticketing systems) to decide whether to route a transaction to the **Ticketing System** or the **Camera LPR System**.

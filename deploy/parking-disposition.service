@@ -1,0 +1,17 @@
+# Template: deploy/install-service.sh fills in the placeholders and installs the result.
+[Unit]
+Description=Parking Disposition engine and dashboard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__
+Environment=PYTHONUNBUFFERED=1
+ExecStart=__PROJECT_DIR__/.venv/bin/python scripts/engine.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

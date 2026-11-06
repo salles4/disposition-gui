@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from flask import send_from_directory, request
 from flask_socketio import join_room
 
-from scripts.app_context import app, socketio
+from scripts.app_context import app, socketio, DIST_DIR
 from scripts.config import GLOBAL_CONFIG, load_config, save_config, sanitize_terminals, find_camera
 from scripts.state import (
     queue_lock, connected_terminals, sim_stats, logs_history,
@@ -628,14 +628,13 @@ def camera_webhook_receiver():
 # =========================================================
 @app.route('/')
 def serve_vue_app():
-    return send_from_directory(os.path.join(app.root_path, 'dist'), 'index.html')
+    return send_from_directory(DIST_DIR, 'index.html')
 
 @app.route('/<path:path>')
 def serve_vue_routes(path):
-    dist_path = os.path.join(app.root_path, 'dist')
-    if os.path.exists(os.path.join(dist_path, path)): 
-        return send_from_directory(dist_path, path)
-    return send_from_directory(dist_path, 'index.html')
+    if os.path.exists(os.path.join(DIST_DIR, path)):
+        return send_from_directory(DIST_DIR, path)
+    return send_from_directory(DIST_DIR, 'index.html')
 
 load_config(log_event)
 # Port this process listens on; a different saved app_port only takes effect after a restart
@@ -649,4 +648,5 @@ if __name__ == "__main__":
     
     # 🟢 FIX: Ensure use_reloader=False is set to prevent duplicate thread generation
     host = os.environ.get("HOST", "0.0.0.0")
-    socketio.run(app, host=host, port=RUNNING_APP_PORT, debug=False, use_reloader=False)
+    # allow_unsafe_werkzeug: without it Flask-SocketIO refuses to start when there's no terminal, as under systemd
+    socketio.run(app, host=host, port=RUNNING_APP_PORT, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
