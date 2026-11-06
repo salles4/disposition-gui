@@ -203,7 +203,9 @@
               <th class="col-header-ops"><span class="mdi mdi-account-shield"></span> Admin Read</th>
               -->
               <th><span class="mdi mdi-gavel"></span> Disposition</th>
+              <!-- Server Read column, hidden for now
               <th class="col-header-ops"><span class="mdi mdi-server"></span> Server Read</th>
+              -->
               <th class="col-header-decision"><span class="mdi mdi-swap-horizontal-bold"></span> Process</th>
               <!-- Hidden for now: Validation column
               <th style="text-align: center;"><span class="mdi mdi-list-status"></span> Validation</th>
@@ -214,7 +216,7 @@
           <!-- Rows slide in, and glide into place when new ones are inserted or filters change -->
           <TransitionGroup tag="tbody" name="row">
             <tr v-if="visibleComparisonList.length === 0" key="__empty__">
-              <td :colspan="splitExitLayout ? 9 : 8" class="no-data-row">
+              <td :colspan="splitExitLayout ? 8 : 7" class="no-data-row">
                 <span v-if="searchQuery" class="mdi mdi-database-search" style="margin-right: 6px;"></span>
                 <span v-else class="mdi mdi-loading mdi-spin" style="margin-right: 6px;"></span>
                 {{ searchQuery ? 'No records match search filter' : 'Awaiting vehicle streaming payloads...' }}
@@ -345,6 +347,7 @@
                 </Transition>
               </td>
 
+              <!-- Server Read cell, hidden for now
               <td class="col-cell-ops">
                 <Transition name="cell-fade" mode="out-in">
                 <div v-if="hasNormalServerRecord(row)" class="source-cell-block">
@@ -368,6 +371,7 @@
                 <span v-else class="text-muted">— Not Checked —</span>
                 </Transition>
               </td>
+              -->
 
               <td class="col-cell-decision" style="vertical-align: middle;">
                 <Transition name="cell-fade" mode="out-in">
