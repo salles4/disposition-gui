@@ -19,8 +19,10 @@ bash deploy/install-service.sh
 **After pulling new code:**
 
 ```bash
-npm ci && npm run build && sudo systemctl restart parking-disposition
+npm run build:service
 ```
+
+This installs the npm packages, builds the dashboard, restarts the service and shows its status. It asks for your password for the restart.
 
 **Day to day:**
 

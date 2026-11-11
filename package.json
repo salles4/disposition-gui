@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:service": "npm ci && vite build && sudo systemctl restart parking-disposition && sleep 3 && systemctl --no-pager --lines=10 status parking-disposition",
     "preview": "vite preview",
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
