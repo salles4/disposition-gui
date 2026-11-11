@@ -1,10 +1,10 @@
 <template>
-  <div class="admin-card flex-grow console-card flex-card">
+  <div class="admin-card console-card">
     <div class="console-header">
       <h2>
-        <span class="mdi mdi-console-line" style="color: #ffc107; margin-right: 8px;"></span>
+        <span class="mdi mdi-console-line heading-icon"></span>
         Live System Engine Logs
-        <span style="font-size: 0.75rem; background: rgba(255, 193, 7, 0.1); color: #ffc107; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(255, 193, 7, 0.2); font-family: monospace; font-weight: bold; margin-left: 8px; vertical-align: middle;">Port: {{ wsPort }}</span>
+        <span class="port-chip">Port: {{ wsPort }}</span>
       </h2>
       <button class="btn btn-secondary btn-sm" @click="clearLogs">
         <span class="mdi mdi-delete-sweep-outline"></span> Clear Panel
@@ -63,95 +63,89 @@ watch(() => props.logs, () => {
 </script>
 
 <style scoped>
-.flex-grow { flex: 2 1 380px; }
-.flex-card { display: flex; flex-direction: column; }
-.console-card { min-height: 380px; }
-.admin-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 25px; box-sizing: border-box; }
+.admin-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 24px; box-sizing: border-box; box-shadow: var(--shadow); min-width: 0; }
+.console-card { display: flex; flex-direction: column; }
 .console-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #333;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-soft);
   padding-bottom: 12px;
   margin-bottom: 15px;
 }
 .console-header h2 {
   margin: 0;
-  font-size: 1.2rem;
-  color: #007bff;
+  font-size: 1.15rem;
+  color: var(--text);
   display: flex;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.heading-icon { color: var(--c-yellow); }
+.port-chip {
+  font-size: 0.75rem;
+  background: rgba(255, 193, 7, 0.12);
+  color: var(--c-yellow);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  font-family: monospace;
+  font-weight: bold;
 }
 .btn-secondary {
-  background: #2b2b2b;
-  border: 1px solid #444;
+  background: var(--btn-neutral-bg);
+  border: 1px solid var(--border);
   padding: 6px 12px;
   font-size: 0.85rem;
   border-radius: 4px;
   cursor: pointer;
-  color: white;
+  color: var(--btn-neutral-text);
   font-weight: bold;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.btn-secondary:hover {
-  background: #3a3a3a;
-  border-color: #555;
-}
+.btn-secondary:hover { border-color: var(--border-strong); }
+/* Fills the card's height (set by the row) without its own content stretching the row */
 .console-body {
-  background-color: #050505;
-  border: 1px solid #222;
+  flex: 1 1 auto;
+  height: 0;
+  min-height: 320px;
+  background-color: var(--console-bg);
+  border: 1px solid var(--border-soft);
   border-radius: 6px;
   padding: 15px;
   font-family: 'Courier New', Courier, monospace;
-  font-size: 0.9rem;
-  height: 250px;
+  font-size: 0.88rem;
   overflow-y: auto;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.8);
   display: flex;
   flex-direction: column;
   gap: 6px;
   scroll-behavior: smooth;
 }
-.console-body::-webkit-scrollbar {
-  width: 8px;
-}
-.console-body::-webkit-scrollbar-track {
-  background: #050505;
-}
-.console-body::-webkit-scrollbar-thumb {
-  background: #222;
-  border-radius: 4px;
-}
-.console-body::-webkit-scrollbar-thumb:hover {
-  background: #333;
-}
+.console-body::-webkit-scrollbar { width: 8px; }
+.console-body::-webkit-scrollbar-track { background: transparent; }
+.console-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.console-body::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 .console-placeholder {
-  color: #555;
+  color: var(--text-faint);
   text-align: center;
-  margin-top: 100px;
+  margin: auto 0;
   font-style: italic;
 }
-.console-line {
-  display: flex;
-  gap: 10px;
-  line-height: 1.4;
-  word-break: break-all;
-}
-.console-ts {
-  color: #666;
-  user-select: none;
-}
-.console-level {
-  font-weight: bold;
-  user-select: none;
-  min-width: 65px;
-  display: inline-block;
-}
-.level-entry { color: #ffc107; }
-.level-exit { color: #28a745; }
-.level-pay { color: #e83e8c; }
-.level-admin { color: #17a2b8; }
-.level-system { color: #17a2b8; }
-.level-error { color: #dc3545; }
-.level-info { color: #6f42c1; }
-.console-msg { color: #e0e0e0; }
+.console-line { display: flex; gap: 10px; line-height: 1.4; word-break: break-all; }
+.console-ts { color: var(--text-faint); user-select: none; flex-shrink: 0; }
+.console-level { font-weight: bold; user-select: none; min-width: 65px; display: inline-block; flex-shrink: 0; }
+.level-entry { color: var(--c-yellow); }
+.level-exit { color: var(--c-green); }
+.level-pay { color: var(--c-pink); }
+.level-admin { color: var(--c-cyan); }
+.level-system { color: var(--c-cyan); }
+.level-error { color: var(--c-red); }
+.level-info { color: var(--c-violet); }
+.console-msg { color: var(--console-text); }
 </style>

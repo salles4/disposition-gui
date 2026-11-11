@@ -110,15 +110,26 @@ def migrate_camera_mapping():
         terminal = terminals[terminal_id]
         gates = []
         for direction in sorted(terminal["gates"]):  # entry before exit
-            gates.append({"id": next_gate_id, **terminal["gates"][direction]})
+            gates.append({"id": next_gate_id, "number": next_gate_id, **terminal["gates"][direction]})
             next_gate_id += 1
         result.append({**terminal, "gates": gates})
     GLOBAL_CONFIG["terminals"] = result
     print(f"[CONFIG] Converted camera_mapping into {len(result)} terminal(s).", flush=True)
 
+def gate_number(gate):
+    """The number shown for a gate. Only a label: several gates may share it. Older configs have none, so their id was shown."""
+    try:
+        number = int(gate.get("number"))
+    except (TypeError, ValueError):
+        return gate["id"]
+    return number if number >= 1 else gate["id"]
+
 def sanitize_terminals(raw):
-    """Keep only well-formed terminals/gates/cameras from a dashboard save."""
+    """Keep only well-formed terminals/gates/cameras from a dashboard save.
+    A gate's "id" is its internal identifier and must be unique; its "number" is the label people see and may repeat."""
     terminals = []
+    used_gate_ids = set()
+    pending_gates = []  # gates whose id was missing or taken, given a fresh one once every valid id is known
     for t in raw or []:
         try:
             terminal_id = int(t["id"])
@@ -129,16 +140,30 @@ def sanitize_terminals(raw):
             try:
                 gate_id = int(g["id"])
             except (KeyError, TypeError, ValueError):
-                continue
+                gate_id = None
+            if gate_id is not None and (gate_id < 1 or gate_id in used_gate_ids):
+                gate_id = None
             cameras = {
                 role: str(ip).strip()
                 for role, ip in (g.get("cameras") or {}).items()
                 if role in ("front", "back") and ip and str(ip).strip()
             }
             direction = g.get("direction") if g.get("direction") in ("entry", "exit") else "entry"
-            gates.append({"id": gate_id, "direction": direction, "cameras": cameras})
+            gate = {"id": gate_id, "number": g.get("number"), "direction": direction, "cameras": cameras}
+            if gate_id is None:
+                pending_gates.append(gate)
+            else:
+                used_gate_ids.add(gate_id)
+            gates.append(gate)
         name = str(t.get("name") or "").strip() or f"Terminal {terminal_id}"
         terminals.append({"id": terminal_id, "name": name, "gates": gates})
+    next_id = max(used_gate_ids, default=0) + 1
+    for gate in pending_gates:
+        gate["id"] = next_id
+        next_id += 1
+    for terminal in terminals:
+        for gate in terminal["gates"]:
+            gate["number"] = gate_number(gate)
     return terminals
 
 def find_camera(ip):
@@ -151,6 +176,7 @@ def find_camera(ip):
                         "terminal_id": terminal["id"],
                         "terminal_name": terminal.get("name") or f"Terminal {terminal['id']}",
                         "gate_id": gate["id"],
+                        "gate_number": gate_number(gate),
                         "direction": gate.get("direction", "entry"),
                         "camera": role,
                     }

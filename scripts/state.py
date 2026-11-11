@@ -744,6 +744,13 @@ PAIR_WINDOW_SECONDS = 4  # the other camera's read of the same vehicle arrives w
 PAIR_MAX_PLATE_DISTANCE = 2  # front and back can disagree by OCR noise; a bigger difference is another vehicle
 CAMERA_SLOTS = {"FRONT_CAM": ("front", "front_camera", "back_camera"), "BACK_CAM": ("back", "back_camera", "front_camera")}
 
+def same_gate(rec, data):
+    """Whether a row and an incoming camera read are from the same configured gate.
+    Rows from before gates had a separate label stored only "GATE <id>"."""
+    if rec.get("gate_id") is not None:
+        return rec.get("gate_id") == data.get("gate_id")
+    return rec.get("gate") == f"GATE {data.get('gate_id')}"
+
 def find_lane_partner(data, incoming_dt):
     """The row in this camera's lane that this read belongs to: a read from either camera, of the same vehicle.
     Covers the other camera's read and a repeat trigger of the same camera.
@@ -754,7 +761,7 @@ def find_lane_partner(data, incoming_dt):
         reads = [r for r in (rec.get("front_camera"), rec.get("back_camera")) if r]
         if not reads:
             continue
-        if (rec.get("terminal_id") != data.get("terminal_id") or rec.get("gate") != f"GATE {data.get('gate_id')}"
+        if (rec.get("terminal_id") != data.get("terminal_id") or not same_gate(rec, data)
                 or rec.get("direction") != data.get("direction")):
             continue
         try:
@@ -991,6 +998,7 @@ def process_and_buffer_bundle(sources):
                     "vehicle_type": normalize_camera_vehicle_type(data.get("vehicleType")),
                     "raw_type_received": data.get("vehicleType"),
                     "confidence": data.get("confidence"),
+                    "ip": data.get("camera_ip"),  # camera that sent this read, kept even if the gate's cameras change later
                     "timestamp": data.get("timestamp"),
                     "plate_image": data.get("plateImage"),      
                     "vehicle_image": data.get("vehicleImage")
@@ -999,7 +1007,9 @@ def process_and_buffer_bundle(sources):
                     record["terminal_id"] = data.get("terminal_id")
                     record["terminal_name"] = data.get("terminal_name")
                 if data.get("gate_id"):
-                    record["gate"] = f"GATE {data.get('gate_id')}"
+                    # gate_id identifies the gate; "gate" is its label, which several gates may share
+                    record["gate_id"] = data.get("gate_id")
+                    record["gate"] = f"GATE {data.get('gate_number') or data.get('gate_id')}"
                 if data.get("direction"):
                     record["direction"] = data.get("direction")
             
@@ -1009,6 +1019,7 @@ def process_and_buffer_bundle(sources):
                     "vehicle_type": normalize_camera_vehicle_type(data.get("vehicleType")),
                     "raw_type_received": data.get("vehicleType"),
                     "confidence": data.get("confidence"),
+                    "ip": data.get("camera_ip"),  # camera that sent this read, kept even if the gate's cameras change later
                     "timestamp": data.get("timestamp"),
                     "plate_image": data.get("plateImage"),
                     "vehicle_image": data.get("vehicleImage")
@@ -1017,7 +1028,9 @@ def process_and_buffer_bundle(sources):
                     record["terminal_id"] = data.get("terminal_id")
                     record["terminal_name"] = data.get("terminal_name")
                 if data.get("gate_id"):
-                    record["gate"] = f"GATE {data.get('gate_id')}"
+                    # gate_id identifies the gate; "gate" is its label, which several gates may share
+                    record["gate_id"] = data.get("gate_id")
+                    record["gate"] = f"GATE {data.get('gate_number') or data.get('gate_id')}"
                 if data.get("direction"):
                     record["direction"] = data.get("direction")
             

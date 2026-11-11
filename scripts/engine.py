@@ -541,6 +541,8 @@ def analyze_camera_payload(payload_package):
                 camera_data["terminal_id"] = cam_info["terminal_id"]
                 camera_data["terminal_name"] = cam_info["terminal_name"]
                 camera_data["gate_id"] = gate_id
+                camera_data["gate_number"] = cam_info["gate_number"]
+                camera_data["camera_ip"] = ip_address
                 camera_data["direction"] = direction
 
                 source_type = "FRONT_CAM" if camera_role == "front" else "BACK_CAM"

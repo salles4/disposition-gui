@@ -108,7 +108,7 @@
               <option value="ALL">All Terminals</option>
               <optgroup v-for="t in terminals" :key="t.id" :label="t.name">
                 <option :value="`T${t.id}`">All of {{ t.name }}</option>
-                <option v-for="g in t.gates" :key="g.id" :value="`G${g.id}`">Gate {{ g.id }} · {{ g.direction === 'exit' ? 'Exit' : 'Entry' }}</option>
+                <option v-for="g in t.gates" :key="g.id" :value="`G${g.id}`">Gate {{ g.number ?? g.id }} · {{ g.direction === 'exit' ? 'Exit' : 'Entry' }}</option>
               </optgroup>
             </select>
           </div>
@@ -503,7 +503,7 @@
               <section class="source-card source-front">
                 <header class="source-card-header">
                   <h4><span class="mdi mdi-camera"></span> Front Camera Read</h4>
-                  <span class="source-card-sub">192.168.0.64</span>
+                  <span v-if="getCameraIp(selectedVehicle, 'front')" class="source-card-sub">{{ getCameraIp(selectedVehicle, 'front') }}</span>
                   <span v-if="selectedVehicle.front_camera" class="source-card-time"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.front_camera.timestamp) }}</span>
                 </header>
                 <dl v-if="selectedVehicle.front_camera" class="source-fields">
@@ -531,7 +531,7 @@
               <section class="source-card source-back">
                 <header class="source-card-header">
                   <h4><span class="mdi mdi-camera-rear"></span> Back Camera Read</h4>
-                  <span class="source-card-sub">192.168.0.65</span>
+                  <span v-if="getCameraIp(selectedVehicle, 'back')" class="source-card-sub">{{ getCameraIp(selectedVehicle, 'back') }}</span>
                   <span v-if="selectedVehicle.back_camera" class="source-card-time"><span class="mdi mdi-clock-outline"></span> {{ formatTime(selectedVehicle.back_camera.timestamp) }}</span>
                 </header>
                 <dl v-if="selectedVehicle.back_camera" class="source-fields">
@@ -623,6 +623,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { io } from 'socket.io-client'
 import TokenPrompt from '@/components/TokenPrompt.vue'
+import { useTheme } from '@/composables/useTheme'
 
 const displayPlate = (key) => {
   if (!key) return ''
@@ -701,16 +702,8 @@ const exitRowsRightAligned = ref(true)
 // Configured terminals -> gates (from the dashboard's Terminals & Cameras card); the Terminal filter lists only these
 const terminals = ref([])
 
-// Light mode for readability in bright surroundings (remembered per browser)
-const LIGHT_MODE_KEY = 'comparison_light_mode'
-const readLightMode = () => {
-  try { return localStorage.getItem(LIGHT_MODE_KEY) === '1' } catch { return false }
-}
-const isLightMode = ref(readLightMode())
-const toggleLightMode = () => {
-  isLightMode.value = !isLightMode.value
-  try { localStorage.setItem(LIGHT_MODE_KEY, isLightMode.value ? '1' : '0') } catch { /* storage unavailable */ }
-}
+// Color scheme shared with the admin dashboard: light by default, remembered per browser
+const { isLight: isLightMode, toggleTheme: toggleLightMode } = useTheme()
 
 // Non-default filters, shown on the toggle so collapsed filters never silently hide rows
 const activeFilterCount = computed(() => [
@@ -1023,9 +1016,26 @@ const refreshAwaitingServerCheck = () => {
     awaitingServerCheck.value = new Set(keys)
   }
 }
+// The configured gate a row came from. "gate" is only its label (gates can share a number);
+// rows saved before gates had separate labels have no gate_id, and their label was the id.
 const getRowGateId = (row) => {
+  if (row.gate_id != null) return row.gate_id
   const id = parseInt(String(row.gate || '').replace(/\D/g, ''), 10)
   return Number.isNaN(id) ? null : id
+}
+
+// IP of the camera behind a row's front or back read. Rows saved before reads kept their camera's IP
+// fall back to the camera currently configured on that gate.
+const getCameraIp = (row, role) => {
+  const read = role === 'front' ? row.front_camera : row.back_camera
+  if (read?.ip) return read.ip
+  const gateId = getRowGateId(row)
+  if (gateId == null) return ''
+  for (const t of terminals.value) {
+    const gate = (t.gates || []).find(g => g.id === gateId)
+    if (gate) return gate.cameras?.[role] || ''
+  }
+  return ''
 }
 
 // e.g. "Terminal 1 · GATE 2"; rows saved before terminals existed only have their old gate, rows without either show nothing

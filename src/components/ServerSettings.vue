@@ -1,7 +1,7 @@
 <template>
   <div class="admin-card server-card">
-    <h2>Server Connection</h2>
-    <p>Where this app finds the core API, and which ports it listens on.</p>
+    <h2><span class="mdi mdi-server-network heading-icon"></span> Server Connection</h2>
+    <p class="card-subtitle">Where this app finds the core API, and which ports it listens on.</p>
 
     <form @submit.prevent="save" novalidate>
       <div class="field-row">
@@ -142,61 +142,61 @@ onUnmounted(() => props.socket.off('servers_update_result', onResult))
 </script>
 
 <style scoped>
-.server-card { flex: 1 1 300px; }
-.admin-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 25px; box-sizing: border-box; }
-.admin-card h2 { margin-top: 0; }
-.admin-card > p { color: #888; font-size: 0.85rem; margin-top: -6px; }
+.admin-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 24px; box-sizing: border-box; box-shadow: var(--shadow); min-width: 0; }
+.admin-card h2 { font-size: 1.15rem; color: var(--text); margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+.heading-icon { color: var(--c-cyan); }
+.card-subtitle { font-size: 0.85rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.4; }
 
 .field-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .form-group { margin-bottom: 14px; display: flex; flex-direction: column; }
 .form-group.grow { flex: 1 1 140px; }
 .form-group.port { flex: 0 0 96px; }
 
-label { display: block; font-size: 0.85rem; color: #888; margin-bottom: 5px; }
+label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 5px; }
 .label-with-info { display: flex; align-items: center; gap: 6px; }
 
 .compact-input {
   padding: 9px 10px;
-  background: #000;
-  border: 1px solid #333;
-  color: #fff;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
   border-radius: 4px;
   font-size: 0.88rem;
   width: 100%;
   box-sizing: border-box;
   font-family: Consolas, monospace;
 }
-.compact-input:focus { outline: none; border-color: #17a2b8; }
+.compact-input:focus { outline: none; border-color: var(--c-cyan); }
 
-.current-line { font-size: 0.78rem; color: #777; margin: 2px 0 12px; }
-code { background: #111; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; color: #ffc107; }
+.current-line { font-size: 0.78rem; color: var(--text-muted); margin: 2px 0 12px; }
+code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; color: var(--c-yellow); }
 
 .result-msg { display: flex; gap: 8px; align-items: flex-start; font-size: 0.82rem; padding: 10px 12px; border-radius: 6px; margin: 0 0 12px; line-height: 1.4; }
-.result-msg.ok { background: rgba(40, 167, 69, 0.1); color: #5dd879; border: 1px solid rgba(40, 167, 69, 0.3); }
-.result-msg.warn { background: rgba(255, 193, 7, 0.1); color: #ffd54f; border: 1px solid rgba(255, 193, 7, 0.3); }
-.result-msg.error { background: rgba(244, 63, 94, 0.1); color: #ff7a8f; border: 1px solid rgba(244, 63, 94, 0.3); }
+.result-msg.ok { background: rgba(40, 167, 69, 0.1); color: var(--c-green); border: 1px solid rgba(40, 167, 69, 0.3); }
+.result-msg.warn { background: rgba(255, 193, 7, 0.12); color: var(--c-yellow); border: 1px solid rgba(255, 193, 7, 0.35); }
+.result-msg.error { background: rgba(244, 63, 94, 0.1); color: var(--c-rose); border: 1px solid rgba(244, 63, 94, 0.3); }
 
 .actions { display: flex; gap: 10px; }
-.btn { border: none; padding: 11px 18px; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; font-size: 0.95rem; transition: filter 0.2s, opacity 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-family: inherit; }
-.btn:hover:not(:disabled) { filter: brightness(1.2); }
+.btn { border: none; padding: 11px 18px; border-radius: 5px; cursor: pointer; font-weight: bold; color: #fff; font-size: 0.95rem; transition: filter 0.2s, opacity 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-family: inherit; }
+.btn:hover:not(:disabled) { filter: brightness(1.1); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-success { background: #28a745; flex: 1; }
-.btn-secondary { background: #333; }
+.btn-success { background: var(--btn-ok-bg); flex: 1; }
+.btn-secondary { background: var(--btn-neutral-bg); color: var(--btn-neutral-text); }
 
 /* Tooltips (same look as Simulation Settings) */
 .tooltip-container { position: relative; display: inline-flex; align-items: center; }
-.info-icon { color: #666; font-size: 0.95rem; cursor: pointer; transition: color 0.2s; line-height: 1; }
-.info-icon:hover { color: #ffc107; }
+.info-icon { color: var(--text-faint); font-size: 0.95rem; cursor: pointer; transition: color 0.2s; line-height: 1; }
+.info-icon:hover { color: var(--c-yellow); }
 .tooltip-content {
   visibility: hidden; opacity: 0; pointer-events: none;
   position: absolute; z-index: 100; bottom: 125%; left: 50%; transform: translateX(-50%);
-  width: 280px; background-color: #222; color: #fff; text-align: left;
-  border-radius: 6px; padding: 12px; border: 1px solid #444;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.5); font-size: 0.75rem; line-height: 1.4;
+  width: 280px; background-color: var(--tooltip-bg); color: var(--text); text-align: left;
+  border-radius: 6px; padding: 12px; border: 1px solid var(--border);
+  box-shadow: var(--shadow-pop); font-size: 0.75rem; line-height: 1.4;
   display: flex; flex-direction: column; gap: 6px;
   transition: opacity 0.2s, visibility 0.2s;
 }
-.tooltip-title { font-weight: bold; color: #ffc107; font-size: 0.8rem; border-bottom: 1px solid #333; padding-bottom: 4px; }
-.tech-tooltip { color: #aaa; border-top: 1px dashed #444; padding-top: 6px; }
+.tooltip-title { font-weight: bold; color: var(--c-yellow); font-size: 0.8rem; border-bottom: 1px solid var(--border-soft); padding-bottom: 4px; }
+.tech-tooltip { color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 6px; }
 .tooltip-container:hover .tooltip-content { visibility: visible; opacity: 1; }
 </style>
